@@ -9,6 +9,7 @@ import { DialogBlock } from "./components/dialog-block";
 import { DrawerBlock } from "./components/drawer-block";
 import { FollowUpBlock } from "./components/follow-up-block";
 import { Image, ImageBlock } from "./components/image";
+import { FileDownload } from "./components/file-download";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { PaginationBlock } from "./components/pagination-block";
 import { Progress } from "./components/progress";
@@ -44,6 +45,7 @@ export const ContentChildUnion = z.union([
   CodeBlock.ref,
   Image.ref,
   ImageBlock.ref,
+  FileDownload.ref,
   Progress.ref,
   Separator.ref,
   BarChartCondensed.ref,

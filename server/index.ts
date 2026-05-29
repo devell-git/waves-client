@@ -24,6 +24,7 @@ import { getProgress } from "./tool-progress.js";
 import { DEFAULT_OPENAI_MODEL } from "./waves-prompt.js";
 import { loadOpenUISpec } from "./openui-spec.js";
 import { uploadsRouter } from "./uploads.js";
+import { ensureFilesDir, filesRouter } from "./files.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -507,6 +508,11 @@ app.post("/api/skills/:name/start", async (req, res) => {
 // --- Upload de arquivos do chat (multipart) --------------------------------
 // POST /api/uploads → salva + extrai texto. GET /api/uploads/:id → original.
 app.use("/api/uploads", uploadsRouter);
+
+// --- Arquivos enviados PELO AGENTE pro usuário (download seguro) ------------
+// GET /api/files/:id (auth Bearer + ownership + attachment). POST /api/files.
+ensureFilesDir();
+app.use("/api/files", filesRouter);
 
 app.post("/api/chat", async (req, res) => {
   try {

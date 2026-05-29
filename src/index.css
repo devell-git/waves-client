@@ -2158,3 +2158,53 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ─── FileDownload (arquivo enviado pelo agente) ───────────────────────── */
+.waves-file-download-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-width: 100%;
+}
+.waves-file-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  background: var(--card, rgba(0, 0, 0, 0.03));
+  color: var(--foreground);
+  font-size: 0.88rem;
+  cursor: pointer;
+  max-width: 20rem;
+  transition: background-color 0.15s ease;
+}
+.waves-file-download:hover:not(:disabled) {
+  background: var(--accent, rgba(0, 0, 0, 0.06));
+}
+.waves-file-download:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.waves-file-download__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.waves-file-download__size {
+  opacity: 0.55;
+  font-size: 0.75rem;
+}
+.waves-file-download__dl {
+  opacity: 0.6;
+  margin-left: 0.1rem;
+}
+.waves-file-download__spin {
+  animation: waves-composer-spin 0.8s linear infinite;
+}
+.waves-file-download__err {
+  font-size: 0.75rem;
+  color: var(--destructive, #dc2626);
+}

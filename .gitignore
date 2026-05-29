@@ -6,6 +6,7 @@ dist
 tsconfig.tsbuildinfo
 .venv
 uploads
+agent-files
 
 # Segredos — chaves do Hermes (NUNCA versionar)
 .secrets

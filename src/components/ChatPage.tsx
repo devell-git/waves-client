@@ -111,6 +111,23 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
             role: "user",
             content: `${contentPart}<context>${JSON.stringify(ctx)}</context>`,
           });
+          return;
+        }
+        // open_url: o Button(action=open_url) emite isso. Abre em nova aba só
+        // pra URLs seguras — same-origin (/api/...) ou hosts confiáveis (Waves).
+        // Bloqueia javascript:/data:/externos não-allowlisted (proteção contra
+        // openui-lang malicioso vindo de prompt-injection num doc enviado).
+        if (event.type === "open_url") {
+          const rawUrl = event.params?.url;
+          const url = typeof rawUrl === "string" ? rawUrl : "";
+          const safe =
+            /^\/[^/]/.test(url) ||
+            /^https:\/\/([a-z0-9-]+\.)*devell\.com\.br(\/|$)/i.test(url);
+          if (safe) {
+            window.open(url, "_blank", "noopener,noreferrer");
+          } else if (url) {
+            console.warn("[openui] open_url bloqueado (fora da allowlist):", url);
+          }
         }
       }}
     />

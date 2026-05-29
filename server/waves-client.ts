@@ -75,6 +75,28 @@ async function wavesFetch(
   return body;
 }
 
+/**
+ * Valida o token Sanctum do Babble e retorna o usuário autenticado (com `id`).
+ * Usado pelo `/api/files` pra checar o DONO do arquivo no download (o token
+ * vai no header do fetch autenticado do componente FileDownload). Lança se o
+ * token for inválido/expirado (a Waves responde 401).
+ */
+export async function getWavesUser(
+  session: WavesSession,
+): Promise<{ id: number } & Record<string, unknown>> {
+  const body = (await wavesFetch(session, "/user")) as Record<string, unknown>;
+  // A Waves pode devolver {data: {...}} ou o objeto direto.
+  const raw =
+    body && typeof body === "object" && "data" in body && body.data
+      ? (body.data as Record<string, unknown>)
+      : body;
+  const id = Number((raw as { id?: unknown })?.id);
+  if (!Number.isFinite(id)) {
+    throw new Error("Resposta de /user sem id numérico.");
+  }
+  return { ...(raw as Record<string, unknown>), id };
+}
+
 export async function listWorkflows(session: WavesSession) {
   const perPage = 100;
   const firstPage = await wavesFetch(session, buildWorkflowsListPath(1, perPage));

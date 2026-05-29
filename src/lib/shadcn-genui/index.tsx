@@ -13,6 +13,7 @@ import { ShadcnBadgeComponent } from "./components/badge";
 import { CardHeader } from "./components/card-header";
 import { CodeBlock } from "./components/code-block";
 import { Image, ImageBlock } from "./components/image";
+import { FileDownload } from "./components/file-download";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { Progress } from "./components/progress";
 import { Separator } from "./components/separator";
@@ -130,8 +131,13 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "CodeBlock",
       "Image",
       "ImageBlock",
+      "FileDownload",
       "Progress",
       "Separator",
+    ],
+    notes: [
+      "- Image/ImageBlock mostram imagem inline (src = URL pública ou data:image/...;base64).",
+      "- FileDownload(id, filename, mimeType?, size?) oferece um arquivo pro usuário BAIXAR (relatório, export). id = uuid do arquivo registrado no servidor (agent-files). NÃO invente o id — use o retornado ao registrar o arquivo.",
     ],
   },
   {
@@ -426,6 +432,7 @@ export const shadcnChatLibrary = createLibrary({
     CodeBlock,
     Image,
     ImageBlock,
+    FileDownload,
     Progress,
     Separator,
     // Tables
