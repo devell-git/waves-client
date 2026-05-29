@@ -120,24 +120,43 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
 // apenas quando o chat está vazio (sem mensagens). O `Shell.WelcomeScreen`
 // quando recebe `starters` + título cria layout: título → composer central →
 // starters em pílulas embaixo (variant "short").
+// Passamos `children` pra Shell.WelcomeScreen DE PROPÓSITO: assim ela NÃO
+// adiciona a classe `--with-composer`, e a regra de CSS da lib que esconde o
+// composer da thread no estado vazio não dispara — ou seja, nosso ChatComposer
+// (único, com botão "+") fica visível tanto na welcome quanto na conversa.
+// Renderizamos título + starters aqui; o input fica no ChatComposer embaixo.
 function WelcomeArea({ starters }: { starters: ProfileStarter[] }) {
   const messages = useThread((s) => s.messages);
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
+  const processMessage = useThread((s) => s.processMessage);
+  const isRunning = useThread((s) => s.isRunning);
   if (!isChatEmpty({ isLoadingMessages, messages })) return null;
 
-  const mapped = starters.map((s) => ({
-    displayText: s.displayText,
-    prompt: s.prompt,
-    icon: pickIcon(s.displayText),
-  }));
-
   return (
-    <Shell.WelcomeScreen
-      title="Como posso ajudar?"
-      description="Escolha uma opção pra começar ou digite sua mensagem."
-      starters={mapped}
-      starterVariant="short"
-    />
+    <Shell.WelcomeScreen>
+      <div className="waves-welcome">
+        <h2 className="waves-welcome__title">Como posso ajudar?</h2>
+        <p className="waves-welcome__desc">
+          Escolha uma opção, digite sua mensagem ou anexe um arquivo no “+”.
+        </p>
+        {starters.length > 0 && (
+          <div className="waves-welcome__starters">
+            {starters.map((s, i) => (
+              <button
+                key={`${s.displayText}-${i}`}
+                type="button"
+                className="waves-welcome__starter"
+                disabled={isRunning}
+                onClick={() => processMessage({ role: "user", content: s.prompt })}
+              >
+                <span aria-hidden>{pickIcon(s.displayText)}</span>
+                <span>{s.displayText}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </Shell.WelcomeScreen>
   );
 }
 

@@ -2050,3 +2050,54 @@ a {
   font-size: 0.8rem;
   color: var(--destructive, #dc2626);
 }
+
+/* ─── Welcome custom (sem composer embutido → composer único com "+") ──── */
+.waves-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 38vh;
+  text-align: center;
+  padding: 2rem 1rem 1rem;
+}
+.waves-welcome__title {
+  font-size: 1.55rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+.waves-welcome__desc {
+  color: var(--foreground);
+  opacity: 0.65;
+  margin: 0 0 0.6rem;
+  max-width: 32rem;
+}
+.waves-welcome__starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  max-width: 40rem;
+}
+.waves-welcome__starter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  background: var(--card, transparent);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+.waves-welcome__starter:hover:not(:disabled) {
+  background: var(--accent, rgba(0, 0, 0, 0.06));
+}
+.waves-welcome__starter:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
