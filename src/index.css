@@ -1,0 +1,2052 @@
+@import "tailwindcss";
+@source "../index.html";
+@source "./**/*.{js,ts,jsx,tsx}";
+
+/* ============================================================================
+   shadcn/ui theme variables (Tailwind v4) — base do shadcn-genui library
+   Copiado de examples/shadcn-chat/src/app/globals.css (Thesys openui)
+   ============================================================================ */
+
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+  --color-chart-9: var(--chart-9);
+  --color-chart-10: var(--chart-10);
+  --color-chart-11: var(--chart-11);
+  --color-chart-12: var(--chart-12);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  /* Paleta expandida (12 cores) — light theme. Hue spread amplo, saturação
+     consistente (~0.18-0.24) e lightness (~0.60-0.72) pra coexistirem em
+     gráficos multi-series sem competirem visualmente. */
+  --chart-1: oklch(0.65 0.22 264);   /* azul vivo */
+  --chart-2: oklch(0.68 0.18 162);   /* verde menta */
+  --chart-3: oklch(0.70 0.20 70);    /* laranja-amarelo */
+  --chart-4: oklch(0.65 0.24 12);    /* coral-vermelho */
+  --chart-5: oklch(0.62 0.22 304);   /* roxo */
+  --chart-6: oklch(0.70 0.18 200);   /* ciano */
+  --chart-7: oklch(0.68 0.20 350);   /* magenta */
+  --chart-8: oklch(0.62 0.18 130);   /* verde escuro */
+  --chart-9: oklch(0.72 0.16 90);    /* mostarda */
+  --chart-10: oklch(0.58 0.22 30);   /* terracota */
+  --chart-11: oklch(0.66 0.16 230);  /* azul aço */
+  --chart-12: oklch(0.74 0.14 110);  /* oliva */
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1419;
+  --surface: oklch(0.269 0 0);
+  --text: oklch(0.985 0 0);
+  --legacy-border: oklch(1 0 0 / 12%);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.269 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  /* Paleta expandida (12 cores) — dark theme. Lightness um pouco maior
+     (~0.65-0.75) pra contrastar bem com background dark. */
+  --chart-1: oklch(0.70 0.22 264);
+  --chart-2: oklch(0.72 0.18 162);
+  --chart-3: oklch(0.75 0.20 70);
+  --chart-4: oklch(0.70 0.24 12);
+  --chart-5: oklch(0.68 0.22 304);
+  --chart-6: oklch(0.75 0.18 200);
+  --chart-7: oklch(0.73 0.20 350);
+  --chart-8: oklch(0.68 0.18 130);
+  --chart-9: oklch(0.76 0.16 90);
+  --chart-10: oklch(0.64 0.22 30);
+  --chart-11: oklch(0.72 0.16 230);
+  --chart-12: oklch(0.78 0.14 110);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Escopo explícito — evita scan de pastas removidas (ex.: openui-main) */
+
+:root {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --legacy-primary: #2563eb;
+  --legacy-primary-hover: #1d4ed8;
+  --legacy-border: #e2e8f0;
+  --error-bg: #fef2f2;
+  --error-text: #b91c1c;
+  --warning-bg: #fffbeb;
+  --warning-text: #b45309;
+  --brand: #0b3d91;
+  --shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+  font-family: "DM Sans", system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  /* body usa bg-background/text-foreground via @layer base (shadcn) — não
+     setamos color/background no :root pra evitar override */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.login-layout {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+
+.login-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 3rem;
+  background: #fff;
+}
+
+.login-panel-inner {
+  width: min(100%, 26rem);
+}
+
+.login-logo {
+  display: block;
+  height: 2.75rem;
+  width: auto;
+  max-width: 11rem;
+  object-fit: contain;
+  margin-bottom: 1.75rem;
+}
+
+.login-headline {
+  margin: 0 0 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #1d4ed8;
+}
+
+.login-tagline {
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.login-form {
+  width: 100%;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 1.25rem;
+}
+
+.field > span,
+.field > label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  padding: 0.7rem 0.85rem;
+  font: inherit;
+  color: var(--text);
+  background: #fff;
+}
+
+.field input::placeholder {
+  color: #9ca3af;
+}
+
+.field input:focus {
+  outline: 2px solid rgba(29, 78, 216, 0.25);
+  border-color: #1d4ed8;
+}
+
+.field--password {
+  gap: 0.5rem;
+}
+
+.field-password-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.field-password-row label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.login-forgot {
+  font-size: 0.8rem;
+  color: #6b7280;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.login-forgot:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.btn-login {
+  width: 100%;
+  margin-top: 0.5rem;
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.8rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 1rem;
+  color: #fff;
+  background: #1e3a8a;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-login:hover:not(:disabled) {
+  background: #1e40af;
+}
+
+.btn-login:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-hero {
+  background-image: var(--login-hero);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  min-height: 100vh;
+}
+
+.env-picker {
+  border: 1px solid var(--legacy-border);
+  border-radius: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.env-picker legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.env-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.env-option input {
+  accent-color: var(--legacy-primary);
+}
+
+.btn-primary,
+.btn-secondary {
+  border: none;
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+}
+
+.btn-primary {
+  width: 100%;
+  background: var(--legacy-primary);
+  color: white;
+  margin-top: 0.5rem;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--legacy-primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: white;
+  border: 1px solid var(--legacy-border);
+  color: var(--text);
+}
+
+.alert {
+  border-radius: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.alert-error {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.alert-warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.workflows-layout {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.workflows-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.workflows-header h1 {
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.status {
+  color: var(--muted);
+}
+
+.workflows-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.badge {
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.workflows-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.workflow-card {
+  background: var(--surface);
+  border: 1px solid var(--legacy-border);
+  border-radius: 0.9rem;
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow);
+}
+
+.workflow-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.workflow-card p {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.workflow-card dl {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.workflow-card dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.workflow-card dd {
+  margin: 0;
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.raw-json {
+  background: var(--surface);
+  border: 1px solid var(--legacy-border);
+  border-radius: 0.9rem;
+  padding: 1rem;
+}
+
+.raw-json summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.raw-json pre {
+  margin: 1rem 0 0;
+  overflow: auto;
+  font-size: 0.8rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1rem;
+  border-radius: 0.6rem;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+a {
+  color: var(--legacy-primary);
+}
+
+@media (max-width: 900px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .login-hero {
+    order: -1;
+    min-height: 12rem;
+    background-image: var(--login-hero-mobile, var(--login-hero));
+  }
+
+  .login-panel {
+    padding: 2rem 1.5rem 2.5rem;
+  }
+}
+
+.app-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.workflows-layout--embedded {
+  max-width: none;
+  padding: 1rem 1rem 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflows-layout--embedded .workflows-header {
+  flex-shrink: 0;
+  margin-bottom: 1rem;
+}
+
+.workflows-iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid var(--legacy-border);
+  border-radius: 0.75rem 0.75rem 0 0;
+  background: white;
+}
+
+.chat-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--legacy-border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Profile Select — dropdown de profile no header do chat
+   ============================================================================ */
+
+.profile-select {
+  position: relative;
+  display: inline-block;
+}
+
+.profile-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--legacy-border);
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 11rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.profile-select-trigger:hover,
+.profile-select-trigger[aria-expanded="true"] {
+  border-color: var(--muted-foreground);
+}
+
+.profile-select-label {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-select-caret {
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.profile-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 14rem;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--legacy-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+}
+
+[data-theme="dark"] .profile-select-menu {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.profile-select-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.profile-select-option:hover {
+  background: var(--background);
+}
+
+.profile-select-option-active,
+.profile-select-option-active:hover {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  border-left: 3px solid var(--primary);
+  padding-left: calc(0.7rem - 3px);
+}
+
+[data-theme="dark"] .profile-select-option-active,
+[data-theme="dark"] .profile-select-option-active:hover {
+  background: color-mix(in oklch, var(--primary) 22%, transparent);
+}
+
+.profile-select-option-label {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.profile-select-option-desc {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  line-height: 1.3;
+}
+
+.chat-shell-meta {
+  margin-left: 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.chat-shell-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.chat-shell-body > * {
+  height: 100%;
+}
+
+/* ============================================================================
+   Tool Explorer — sidebar lateral pra explorar as 26 tools da Waves OpenUI
+   ============================================================================ */
+
+.chat-shell-body-with-sidebar {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
+.chat-shell-body-with-sidebar > .chat-shell-body-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Garantir que o FullScreen interno ocupe 100% e não estoure */
+.chat-shell-body-main > * {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Sidebar do openui-shell — injeção do UserMenu no rodapé via portal
+   (componente SidebarUserFooter adiciona um <div data-user-footer> dentro
+   de .openui-shell-sidebar-container e marca o container com a classe
+   --with-user-footer pra virar flex column com footer no fim).
+   ============================================================================ */
+
+/* OpenUI já é flex column + height 100%; content cresce e footer fica no fim */
+.openui-shell-sidebar-container--with-user-footer
+  > .openui-shell-sidebar-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.openui-shell-sidebar-user-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+/* Quando o sidebar tá colapsado, mostra só o avatar */
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+  .openui-shell-sidebar-user-footer
+  .user-menu-info,
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+  .openui-shell-sidebar-user-footer
+  .user-menu-chevron {
+  display: none;
+}
+
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+  .openui-shell-sidebar-user-footer
+  .user-menu-trigger {
+  justify-content: center;
+  padding: 0.35rem;
+}
+
+/* ===== UserMenu ===== */
+
+.user-menu {
+  position: relative;
+}
+
+.user-menu-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.user-menu-trigger:hover,
+.user-menu-trigger[aria-expanded="true"] {
+  background: var(--background);
+  border-color: var(--legacy-border);
+}
+
+.user-menu-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #4f6bed, #7a4fed);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.user-menu-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.user-menu-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-email {
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-chevron {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.user-menu-popover {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-menu-popover--portal {
+  z-index: 10000;
+}
+
+[data-theme="dark"] .user-menu-popover {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.user-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: none;
+  background: transparent;
+  color: var(--popover-foreground);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-align: left;
+  transition: background-color 0.12s ease;
+}
+
+.user-menu-item:hover,
+.user-menu-item:focus-visible {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  outline: none;
+}
+
+.user-menu-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-menu-item-danger {
+  color: #c0392b;
+}
+
+[data-theme="dark"] .user-menu-item-danger {
+  color: #ff7a6e;
+}
+
+.user-menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0.25rem 0;
+}
+
+.user-menu-theme-pill {
+  display: inline-flex;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.user-menu-theme-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s ease, background-color 0.18s ease;
+}
+
+.user-menu-theme-thumb.dark {
+  transform: translateX(14px);
+  background: #1f2937;
+}
+
+.tool-explorer {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--legacy-border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tool-explorer-collapsed {
+  width: 44px;
+}
+
+.tool-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--legacy-border);
+  font-size: 0.9rem;
+}
+
+.tool-explorer-count {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.tool-explorer-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  color: var(--text);
+}
+.tool-explorer-toggle:hover {
+  background: var(--surface-2, rgba(0, 0, 0, 0.05));
+}
+
+.tool-explorer-collapsed .tool-explorer-toggle {
+  margin: 0.6rem auto 0;
+  display: block;
+  font-size: 1.4rem;
+}
+
+.tool-explorer-search {
+  margin: 0.6rem 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--legacy-border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tool-explorer-empty {
+  padding: 0.8rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.tool-explorer-groups {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0.6rem 1rem;
+}
+
+.tool-group {
+  margin-bottom: 0.8rem;
+}
+
+.tool-group-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0.6rem 0.2rem 0.3rem;
+  display: flex;
+  justify-content: space-between;
+}
+.tool-group-count {
+  background: var(--surface-2, rgba(0, 0, 0, 0.06));
+  border-radius: 9px;
+  padding: 0 0.4rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tool-item {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  margin-bottom: 0.2rem;
+}
+.tool-item.open {
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  border-color: var(--legacy-border);
+}
+
+.tool-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.84rem;
+  color: var(--text);
+  border-radius: 5px;
+}
+.tool-item-header:hover {
+  background: var(--surface-2, rgba(0, 0, 0, 0.05));
+}
+
+.tool-name {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-method {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  font-family: ui-monospace, monospace;
+}
+.tool-method.m-get { color: #1d6f42; background: rgba(29, 111, 66, 0.12); }
+.tool-method.m-post { color: #b06400; background: rgba(176, 100, 0, 0.12); }
+.tool-method.m-put { color: #2160c4; background: rgba(33, 96, 196, 0.12); }
+.tool-method.m-delete { color: #a40e26; background: rgba(164, 14, 38, 0.12); }
+
+.tool-detail {
+  padding: 0.5rem 0.6rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.tool-desc {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.tool-endpoint {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  background: var(--bg);
+  border: 1px solid var(--legacy-border);
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  word-break: break-all;
+}
+
+.tool-inputs {
+  margin: 0.4rem 0 0.6rem;
+  font-size: 0.78rem;
+}
+.tool-inputs summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 500;
+}
+.tool-inputs ul {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+.tool-inputs li {
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--legacy-border);
+  line-height: 1.3;
+}
+.tool-inputs code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  background: var(--bg);
+  padding: 0 0.25rem;
+  border-radius: 3px;
+}
+.tool-input-type {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-left: 0.4rem;
+}
+.tool-input-req {
+  font-size: 0.65rem;
+  color: #b06400;
+  margin-left: 0.4rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.tool-input-desc {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.tool-inputs-empty {
+  margin: 0.2rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.tool-cta {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 0.4rem;
+}
+
+.tool-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+}
+/* ============================================================================
+   ThinkingIndicator — substitui MessageLoading padrão da @openuidev
+   ============================================================================ */
+
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 12px;
+  background: var(--accent, rgba(0, 0, 0, 0.04));
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.2;
+  min-height: 36px;
+  font-family: inherit;
+}
+
+.thinking-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chart-1);
+  flex-shrink: 0;
+  animation: thinking-pulse 1.4s ease-in-out infinite;
+}
+
+.thinking-text {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  transition: opacity 0.25s ease-in-out;
+  animation: thinking-fade 1.8s ease-in-out infinite;
+  min-width: 8em;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  max-width: 42rem;
+  overflow: hidden;
+}
+
+.thinking-tool {
+  color: var(--foreground);
+  font-weight: 600;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.thinking-label {
+  color: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.thinking-sep {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.thinking-emoji {
+  flex-shrink: 0;
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: flex-end;
+  margin-left: 2px;
+}
+
+.thinking-dots .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  animation: thinking-wave 1.2s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+.thinking-dots .dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.thinking-dots .dot:nth-child(3) {
+  animation-delay: 0.30s;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0 var(--chart-1);
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 0.7;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@keyframes thinking-fade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  95% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes thinking-wave {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* ============================================================================
+   ThemeToggle — botão de troca light ↔ dark
+   ============================================================================ */
+
+.theme-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  transition: opacity 0.15s ease;
+}
+
+.theme-toggle:hover {
+  opacity: 0.85;
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.theme-toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  transition: background 0.2s ease;
+}
+
+.theme-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--background);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.theme-toggle-thumb.thumb-light {
+  left: 2px;
+  transform: translateX(0);
+}
+
+.theme-toggle-thumb.thumb-dark {
+  left: 2px;
+  transform: translateX(24px);
+}
+
+.chat-shell-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* ============================================================================
+   Thinking stacked — caixas que aparecem em sequência (estilo OpenWebUI)
+   Substitui (acrescenta a) o ThinkingIndicator simples acima
+   ============================================================================ */
+
+.thinking-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 480px;
+}
+
+.thinking-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  border: 1px solid var(--border);
+  background: var(--card);
+  animation: thinking-step-in 0.32s ease-out;
+  transform-origin: top left;
+}
+
+.thinking-step.is-current {
+  background: var(--accent, var(--secondary));
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.thinking-step.is-done {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted-foreground);
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.thinking-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--chart-2);
+  color: var(--background);
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.thinking-text-done {
+  font-weight: 400;
+}
+
+.thinking-meta {
+  margin-top: 2px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+@keyframes thinking-step-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Branding header */
+.chat-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-shell-logo {
+  height: 28px;
+  width: auto;
+  display: block;
+}
+
+/* ============================================================================
+   StarterCards — welcome com cards grandes ao entrar no chat
+   ============================================================================ */
+
+.starter-cards-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem 1rem;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.starter-cards-header {
+  text-align: center;
+}
+
+.starter-cards-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: var(--foreground);
+}
+
+.starter-cards-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted-foreground);
+}
+
+.starter-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.starter-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1rem 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 0.95rem;
+  width: 100%;
+}
+
+.starter-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px -8px rgba(0, 0, 0, 0.15);
+  border-color: var(--ring);
+}
+
+.starter-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.starter-card:active {
+  transform: translateY(0);
+}
+
+.starter-card-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--accent, var(--secondary));
+  line-height: 1;
+}
+
+.starter-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.starter-card-title {
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.25;
+}
+
+.starter-card-desc {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  line-height: 1.3;
+}
+
+.starter-card-arrow {
+  font-size: 1.1rem;
+  color: var(--muted-foreground);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  flex-shrink: 0;
+}
+
+.starter-card:hover .starter-card-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ============================================================================
+   Branding overrides — Waves logo light/dark + header preto (opcional dark)
+   ============================================================================ */
+
+/* Overrides do user */
+.chat-shell-logo {
+  height: 20px;
+  width: auto;
+  display: block;
+}
+
+/* Sidebar logo (FullScreen) — width auto pra não distorcer o PNG Waves */
+.chat-shell .header_logo,
+.chat-shell .openui-shell-sidebar-header__logo {
+  width: auto;
+  height: 28px;
+  max-width: 100%;
+  border-radius: 0;
+}
+
+/* Esconder logo + "Agent" do header do sidebar do openui-shell.
+   Mantemos só o botão de toggle (panel-left-close). */
+.openui-shell-sidebar-header__logo,
+.openui-shell-sidebar-header__agent-name {
+  display: none !important;
+}
+
+.openui-shell-sidebar-header__top-row {
+  justify-content: flex-end;
+}
+
+/* Quando o WelcomeScreen está visível EM DESKTOP, ele já contém o
+   DesktopWelcomeComposer no centro — o Composer normal embaixo é redundante.
+   NO MOBILE o openui-shell esconde o desktop-composer interno
+   (`.openui-shell-container--mobile .openui-shell-welcome-screen__desktop-composer { display: none }`),
+   então precisamos MANTER o Composer normal embaixo no mobile pra não
+   ficar sem input. Use :not(--mobile) pra restringir o esconder. */
+.openui-shell-container:not(.openui-shell-container--mobile)
+  .openui-shell-thread-container:has(> .openui-shell-welcome-screen--with-composer)
+  > .openui-shell-composer {
+  display: none;
+}
+
+/* ============================================================================
+   Thread History — histórico de conversas no sidebar
+   ============================================================================ */
+
+.thread-history-portal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+  min-height: 0;
+}
+
+.thread-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--foreground);
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+}
+
+.thread-new-btn:hover {
+  background: var(--background);
+}
+
+.thread-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.thread-search input {
+  width: 100%;
+  padding: 0.45rem 0.65rem 0.45rem 2rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--legacy-border);
+  border-radius: 7px;
+  background-color: var(--background);
+  color: var(--foreground);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+  background-repeat: no-repeat;
+  background-position: 0.6rem center;
+}
+
+[data-theme="dark"] .thread-search input {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a0a8b4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+}
+
+.thread-search input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.thread-search input:focus {
+  outline: none;
+  border-color: var(--muted-foreground);
+}
+
+/* Remove o X nativo do search input no webkit */
+.thread-search input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.thread-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.thread-history-empty {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.thread-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+  position: relative;
+}
+
+.thread-item:hover {
+  background: var(--background);
+}
+
+.thread-item-active,
+.thread-item-active:hover {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+[data-theme="dark"] .thread-item-active,
+[data-theme="dark"] .thread-item-active:hover {
+  background: color-mix(in oklch, var(--primary) 22%, transparent);
+}
+
+.thread-item-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.thread-item-title {
+  font-size: 0.85rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thread-item-title mark {
+  background: color-mix(in oklch, var(--primary) 30%, transparent);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.thread-item-meta {
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+
+.thread-item-edit {
+  width: 100%;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--legacy-border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.thread-item-delete {
+  opacity: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted-foreground);
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 1.05rem;
+  line-height: 1;
+  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+}
+
+.thread-item:hover .thread-item-delete {
+  opacity: 1;
+}
+
+.thread-item-delete:hover {
+  background: color-mix(in oklch, var(--destructive) 18%, transparent);
+  color: var(--destructive);
+}
+
+/* Logo light/dark toggle automático */
+.chat-shell-logo-dark {
+  display: none;
+}
+
+[data-theme="dark"] .chat-shell-logo-light {
+  display: none;
+}
+
+[data-theme="dark"] .chat-shell-logo-dark {
+  display: block;
+}
+
+/* Header preto no dark mode (vibe ChatGPT-ish) */
+[data-theme="dark"] .chat-shell-header {
+  background: #000;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================================================
+   Starter card com form local (expandido inline ao clicar)
+   ============================================================================ */
+
+.starter-card-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.starter-card-container.is-open .starter-card {
+  border-color: var(--ring);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+
+.starter-card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--ring);
+  border-top: none;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  animation: starter-form-in 0.18s ease-out;
+}
+
+@keyframes starter-form-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.starter-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.starter-form-field label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.starter-form-req {
+  color: var(--destructive);
+  margin-left: 0.2rem;
+}
+
+.starter-form-field input {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.starter-form-field input:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent);
+}
+
+.starter-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.starter-form-actions .btn-primary,
+.starter-form-actions .btn-secondary {
+  flex: 1;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+/* ============================================================================
+ * Override mobile do @openuidev/react-ui (2026-05-27):
+ *
+ * A lib esconde por padrão o composer central e os starters em mobile —
+ * usa BottomTray.WelcomeScreen, que não suporta starters. Queremos a mesma
+ * experiência do desktop também no celular: composer no centro da tela
+ * (acima do fold) + starters como pílulas logo abaixo.
+ *
+ * Forçamos os elementos `__desktop-composer` e `__desktop-starters` a aparecerem
+ * mesmo quando `.openui-shell-container--mobile` está ativo, e escondemos o
+ * composer fixo do rodapé pra não duplicar.
+ * ============================================================================ */
+
+.openui-shell-container--mobile .openui-shell-welcome-screen__desktop-composer {
+  display: flex !important;
+  justify-content: center;
+  width: 100%;
+}
+
+.openui-shell-container--mobile .openui-shell-welcome-screen__desktop-starters {
+  display: block !important;
+  width: 100%;
+}
+
+/* Quando WelcomeScreen com composer está renderizando em mobile, esconder
+   o composer fixo do rodapé do thread (que a lib mostra por padrão em mobile)
+   pra não duplicar input com o composer central. */
+.openui-shell-container--mobile
+  .openui-shell-thread-container:has(.openui-shell-welcome-screen--with-composer)
+  .openui-shell-thread-composer {
+  display: none !important;
+}
+
+/* ============================================================================
+ * Thinking BUBBLE — variante conversacional (2026-05-27)
+ *
+ * Em vez de mostrar nome técnico da tool, mostra mensagem em linguagem
+ * natural gerada pelo backend (humanLabel). Visual mais "balão de fala
+ * do assistant" pra parecer parte da conversa, não um indicador técnico.
+ * ============================================================================ */
+.thinking-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 1rem;
+  border-radius: 14px;
+  background: var(--accent, rgba(0, 0, 0, 0.04));
+  color: var(--foreground);
+  font-size: 0.92rem;
+  line-height: 1.35;
+  min-height: 40px;
+  font-family: inherit;
+  max-width: 36rem;
+}
+
+.thinking-bubble__text {
+  color: var(--foreground);
+  font-weight: 500;
+  /* Fade-in suave quando a mensagem muda — usa `key={message}` no React
+     pra forçar remount e disparar a animação. */
+  animation: thinking-bubble-fade-in 0.4s ease-out;
+}
+
+@keyframes thinking-bubble-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Composer custom (upload de arquivos) ─────────────────────────────── */
+/* Botões do action-bar (o nativo usava IconButton; aqui são <button> crus). */
+.waves-composer__attach-button,
+.waves-composer__submit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.waves-composer__attach-button {
+  background: transparent;
+  color: var(--foreground, #111);
+  opacity: 0.7;
+}
+.waves-composer__attach-button:hover:not(:disabled) {
+  background: var(--accent, rgba(0, 0, 0, 0.06));
+  opacity: 1;
+}
+.waves-composer__attach-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.waves-composer__submit-button {
+  background: var(--legacy-primary, #2563eb);
+  color: #fff;
+}
+.waves-composer__submit-button:hover {
+  background: var(--legacy-primary-hover, #1d4ed8);
+}
+
+.waves-composer__spin {
+  animation: waves-composer-spin 0.8s linear infinite;
+}
+@keyframes waves-composer-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Chips de anexos pendentes */
+.waves-composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  align-items: center;
+}
+.waves-composer__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 16rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--accent, rgba(0, 0, 0, 0.05));
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  font-size: 0.8rem;
+  color: var(--foreground);
+}
+.waves-composer__chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10rem;
+}
+.waves-composer__chip-size {
+  opacity: 0.55;
+  font-size: 0.72rem;
+}
+.waves-composer__chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  padding: 0;
+  border-radius: 9999px;
+}
+.waves-composer__chip-remove:hover {
+  opacity: 1;
+  background: var(--destructive, rgba(220, 38, 38, 0.15));
+}
+.waves-composer__error {
+  font-size: 0.8rem;
+  color: var(--destructive, #dc2626);
+}

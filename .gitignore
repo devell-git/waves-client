@@ -1,0 +1,17 @@
+node_modules
+dist
+.env
+.env.local
+.DS_Store
+tsconfig.tsbuildinfo
+.venv
+uploads
+
+# Segredos — chaves do Hermes (NUNCA versionar)
+.secrets
+
+# Lixo/backups
+*.bak
+*.bak.*
+*.deprecated
+prompts/Untitled
