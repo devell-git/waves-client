@@ -2101,3 +2101,60 @@ a {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ─── Anexos renderizados na bolha do usuário (UserMessageView) ────────── */
+.waves-msg-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.waves-msg-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.waves-msg-att {
+  text-decoration: none;
+  color: inherit;
+}
+/* Thumbnail de imagem */
+.waves-msg-att--image {
+  display: inline-block;
+  line-height: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  transition: filter 0.15s ease;
+}
+.waves-msg-att--image:hover {
+  filter: brightness(0.92);
+}
+.waves-msg-att__thumb {
+  display: block;
+  max-width: 240px;
+  max-height: 240px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+}
+/* Chip de arquivo (pdf/csv/etc.) */
+.waves-msg-att--file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  background: var(--card, rgba(0, 0, 0, 0.03));
+  font-size: 0.85rem;
+  max-width: 16rem;
+  transition: background-color 0.15s ease;
+}
+.waves-msg-att--file:hover {
+  background: var(--accent, rgba(0, 0, 0, 0.06));
+}
+.waves-msg-att__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

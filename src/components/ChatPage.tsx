@@ -19,6 +19,7 @@ import { Renderer } from "@openuidev/react-lang";
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
+import { UserMessageView } from "./UserMessageView";
 import type { UploadedFile } from "../api/uploads";
 import {
   buildConversationStarters,
@@ -443,6 +444,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                   <Shell.Messages
                     loader={<ThinkingIndicator />}
                     assistantMessage={GenUIAssistantMessage}
+                    userMessage={UserMessageView}
                   />
                 </Shell.ScrollArea>
                 <ChatComposer attachmentsRef={attachmentsRef} />

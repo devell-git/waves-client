@@ -117,16 +117,29 @@ export function ChatComposer({
     // ChatPage anexar no body. Preenchido ANTES de disparar a mensagem.
     attachmentsRef.current = uploaded;
 
-    // Conteúdo visível na bolha do user: o texto digitado + um marcador
-    // discreto dos anexos (o texto extraído NÃO aparece aqui — vai no body).
-    const names = uploaded.map((u) => u.filename).join(", ");
-    const marker =
-      uploaded.length > 0
-        ? `${trimmed ? "\n\n" : ""}📎 ${uploaded.length} arquivo(s): ${names}`
-        : "";
-    const visible = `${trimmed}${marker}`.trim();
-
-    processMessage({ role: "user", content: visible });
+    // Conteúdo da mensagem: quando há anexos, enviamos um array multimodal
+    // AG-UI (texto + partes `binary` com a URL do /api/uploads/:id). O renderer
+    // custom (UserMessageView) usa essas partes pra mostrar thumbnail/chip
+    // clicável. O servidor descarta essas partes de imagem (URL relativa) e
+    // monta a versão pro LLM a partir do body.attachments.
+    if (uploaded.length > 0) {
+      const parts: Array<
+        | { type: "text"; text: string }
+        | { type: "binary"; mimeType: string; url: string; filename: string }
+      > = [];
+      if (trimmed) parts.push({ type: "text", text: trimmed });
+      for (const u of uploaded) {
+        parts.push({
+          type: "binary",
+          mimeType: u.mimeType,
+          url: u.url,
+          filename: u.filename,
+        });
+      }
+      processMessage({ role: "user", content: parts });
+    } else {
+      processMessage({ role: "user", content: trimmed });
+    }
 
     setText("");
     setFiles([]);

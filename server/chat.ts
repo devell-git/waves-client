@@ -619,29 +619,37 @@ function injectAttachments(
   blocks.push("</arquivos_anexados>");
   const block = blocks.join("\n");
 
+  // Diagnóstico: confirma o que de fato foi anexado na mensagem.
+  console.log(
+    `[chat:attach] anexos=${attachments.length} ` +
+      `imagens_embutidas=${imageParts.length} ` +
+      `tipos=[${attachments.map((a) => `${a.kind}${a.text ? "+txt" : ""}`).join(", ")}]`,
+  );
+
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i] as Record<string, unknown> | undefined;
     if (!m || m.role !== "user") continue;
     const c = m.content;
 
-    if (imageParts.length > 0) {
-      // Conteúdo multimodal: normaliza pra array e acrescenta texto + imagens.
-      const parts: Array<Record<string, unknown>> = [];
-      if (typeof c === "string") {
-        if (c) parts.push({ type: "text", text: c });
-      } else if (Array.isArray(c)) {
-        parts.push(...(c as Array<Record<string, unknown>>));
-      }
-      parts.push({ type: "text", text: block });
-      parts.push(...imageParts);
-      m.content = parts;
-    } else if (typeof c === "string") {
-      m.content = c ? `${c}\n\n${block}` : block;
+    // Extrai só o TEXTO do conteúdo existente — descarta partes de imagem
+    // mandadas pelo cliente (o composer envia `binary`/`image_url` com URL
+    // relativa /api/uploads, que serve só pra renderização e quebraria a
+    // validação do api_server). O servidor reconstrói as imagens em base64.
+    let baseText = "";
+    if (typeof c === "string") {
+      baseText = c;
     } else if (Array.isArray(c)) {
-      c.push({ type: "text", text: `\n\n${block}` });
-    } else {
-      m.content = block;
+      baseText = (c as Array<Record<string, unknown>>)
+        .filter((p) => p && p.type === "text")
+        .map((p) => String((p as { text?: unknown }).text ?? ""))
+        .join("");
     }
+
+    const textCombined = baseText ? `${baseText}\n\n${block}` : block;
+    m.content =
+      imageParts.length > 0
+        ? [{ type: "text", text: textCombined }, ...imageParts]
+        : textCombined;
     return;
   }
 }
