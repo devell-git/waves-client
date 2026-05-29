@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.mjs";
+import { readFileSync } from "node:fs";
+import { extname } from "node:path";
 import {
   getOpenAiCredential,
   getOpenAiBaseUrl,
@@ -538,10 +540,43 @@ function formatBytesServer(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const IMG_EXT_TO_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+};
+
 /**
- * Anexa um bloco `<arquivos_anexados>` (com o texto extraído) ao final do
- * conteúdo da ÚLTIMA mensagem `user`. Mutação in-place do array de mensagens.
- * Funciona com content string OU array multipart (anexa um text part).
+ * Lê o arquivo de imagem do disco e devolve um data-URI base64
+ * (`data:image/png;base64,…`) — o formato que o api_server do Hermes aceita
+ * em partes `image_url` (validado em `_normalize_multimodal_content`).
+ * `null` se não conseguir ler ou se o mime não for de imagem suportada.
+ */
+function imageToDataUri(a: AttachmentPayload): string | null {
+  let mime = a.mimeType?.toLowerCase();
+  if (!mime || !mime.startsWith("image/")) {
+    mime = IMG_EXT_TO_MIME[extname(a.filename).toLowerCase()];
+  }
+  if (!mime) return null;
+  try {
+    const b64 = readFileSync(a.path).toString("base64");
+    if (!b64) return null;
+    return `data:${mime};base64,${b64}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Injeta os anexos na ÚLTIMA mensagem `user` (mutação in-place):
+ *   - texto extraído (PDF/DOCX/XLSX/texto) vira um bloco `<arquivos_anexados>`;
+ *   - IMAGENS viram partes `image_url` (data-URI base64) — o api_server do
+ *     Hermes preserva e o modelo (que já tem visão, ver canal Telegram) enxerga.
+ *
+ * Quando há imagem, o conteúdo da mensagem passa a ser um array multimodal
+ * `[{type:"text"}, {type:"image_url"}, …]` no formato OpenAI Chat Completions.
  */
 function injectAttachments(
   messages: unknown[],
@@ -549,11 +584,15 @@ function injectAttachments(
 ): void {
   if (!attachments?.length) return;
 
+  // 1. Parte textual (texto extraído + notas dos anexos).
   const blocks: string[] = [
     "<arquivos_anexados>",
-    "O usuário anexou os arquivos abaixo. Use o conteúdo extraído como contexto. Não invente dados que não estejam aqui.",
+    "O usuário anexou os arquivos abaixo. Use o conteúdo (texto extraído e/ou imagens) como contexto. Não invente dados que não estejam aqui.",
     "",
   ];
+  // 2. Partes de imagem (image_url) acumuladas.
+  const imageParts: Array<{ type: "image_url"; image_url: { url: string } }> = [];
+
   for (const a of attachments) {
     const head = `### ${a.filename} (${a.mimeType} · ${formatBytesServer(a.size)})`;
     if (a.text && a.text.trim()) {
@@ -561,7 +600,13 @@ function injectAttachments(
       blocks.push(a.truncated ? "Conteúdo extraído (truncado):" : "Conteúdo extraído:");
       blocks.push('"""', a.text.trim(), '"""', "");
     } else if (a.kind === "image") {
-      blocks.push(`${head} — imagem; conteúdo visual não disponível neste canal (sem visão/OCR). Disponível em ${a.url}.`);
+      const dataUri = imageToDataUri(a);
+      if (dataUri) {
+        imageParts.push({ type: "image_url", image_url: { url: dataUri } });
+        blocks.push(`${head} — imagem anexada (conteúdo visual incluído abaixo).`);
+      } else {
+        blocks.push(`${head} — imagem; não foi possível anexar o conteúdo visual. Disponível em ${a.url}.`);
+      }
       blocks.push("");
     } else if (a.error) {
       blocks.push(`${head} — não foi possível extrair texto (${a.error}). Arquivo salvo em ${a.path}.`);
@@ -578,7 +623,19 @@ function injectAttachments(
     const m = messages[i] as Record<string, unknown> | undefined;
     if (!m || m.role !== "user") continue;
     const c = m.content;
-    if (typeof c === "string") {
+
+    if (imageParts.length > 0) {
+      // Conteúdo multimodal: normaliza pra array e acrescenta texto + imagens.
+      const parts: Array<Record<string, unknown>> = [];
+      if (typeof c === "string") {
+        if (c) parts.push({ type: "text", text: c });
+      } else if (Array.isArray(c)) {
+        parts.push(...(c as Array<Record<string, unknown>>));
+      }
+      parts.push({ type: "text", text: block });
+      parts.push(...imageParts);
+      m.content = parts;
+    } else if (typeof c === "string") {
       m.content = c ? `${c}\n\n${block}` : block;
     } else if (Array.isArray(c)) {
       c.push({ type: "text", text: `\n\n${block}` });
