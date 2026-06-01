@@ -17,7 +17,7 @@ import { Renderer } from "@openuidev/react-lang";
 // Library custom shadcn-genui (36 componentes ricos baseados em shadcn/ui)
 // substitui o openuiChatLibrary built-in pra ter UI mais polida no chat.
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { UserMessageView } from "./UserMessageView";
 import type { UploadedFile } from "../api/uploads";
@@ -30,13 +30,24 @@ import {
 import { fetchRuntime, type RuntimeInfo, type ProfileStarter } from "../api/runtime";
 import { fetchSkills, type SkillMeta } from "../api/skills";
 import { SidebarUserFooter } from "./SidebarUserFooter";
+import { SidebarThreadHistory } from "./SidebarThreadHistory";
+import { TaskEditModal } from "./TaskEditModal";
 import {
   ProfileSelect,
   loadActiveProfileId,
   saveActiveProfileId,
 } from "./ProfileSelect";
 import { ThinkingIndicator } from "./ThinkingIndicator";
-import { createThreadApiAdapters, newThreadId } from "../api/threads";
+import {
+  createThreadApiAdapters,
+  newThreadId,
+  getThreadMessages,
+  toOpenUIMessage,
+} from "../api/threads";
+import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
+import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
+import { clearSession } from "../lib/session";
+import { savePendingChatRequest } from "../lib/pending-chat-request";
 
 /**
  * Ícone padrão pra starter quando o item não traz um próprio.
@@ -57,7 +68,6 @@ function pickIcon(displayText: string): string {
 import { getEnvironmentLabel } from "../config/env";
 import { personaLabel } from "../lib/permissions";
 import { useTheme } from "../hooks/use-system-theme";
-import { usePendingSpecialistJobs } from "../hooks/use-pending-specialist-jobs";
 import type { AuthSession } from "../types/auth";
 
 interface ChatPageProps {
@@ -82,6 +92,25 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
   const isStreaming = useThread((s) => s.isRunning);
   if (!content) return null;
 
+  // Job em background (Relatório MAP / Mídias Negativas): o agente emite um
+  // `check_job: "<id>"`. Em vez de mostrar o texto cru, renderizamos um card
+  // com progress bar ao vivo que vira o resultado quando o job conclui.
+  const job = parseCheckJob(content);
+  if (job) {
+    return (
+      <JobProgressCard
+        jobId={job.jobId}
+        etaSeconds={job.etaSeconds}
+        onActionContent={(label, formState) => {
+          const contentPart = label ? `<content>${label}</content>` : "";
+          const ctx: unknown[] = [`User clicked: ${label ?? ""}`];
+          if (formState) ctx.push(formState);
+          processMessage({ role: "user", content: `${contentPart}<context>${JSON.stringify(ctx)}</context>` });
+        }}
+      />
+    );
+  }
+
   // Texto puro (sem construções openui-lang) → bolha de chat simples
   if (!OPENUI_PATTERN.test(content)) {
     return (
@@ -101,6 +130,18 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
       library={shadcnChatLibrary}
       isStreaming={isStreaming}
       onAction={(event) => {
+        // edit_task: abre o modal NATIVO de edição (caminho B) — GET ao clicar,
+        // sem passar pelo LLM. O card/botão emite {type:'edit_task', params:{task_id}}.
+        if (event.type === "edit_task") {
+          const raw = event.params?.task_id ?? event.params?.taskId;
+          const taskId = raw != null ? Number(raw) : NaN;
+          if (Number.isFinite(taskId)) {
+            window.dispatchEvent(
+              new CustomEvent("waves:edit-task", { detail: { taskId } }),
+            );
+          }
+          return;
+        }
         if (event.type === "continue_conversation") {
           const contentPart = event.humanFriendlyMessage
             ? `<content>${event.humanFriendlyMessage}</content>`
@@ -178,16 +219,11 @@ function WelcomeArea({ starters }: { starters: ProfileStarter[] }) {
   );
 }
 
-// Detecta jobs de specialists pendentes nas mensagens do assistant e
-// auto-polla `/api/specialist-jobs/:id/rendered`. Quando o sub-agent
-// termina, injeta a resposta renderizada (openui-lang) na conversa sem
-// precisar do user clicar. Componente sem render — só side-effects.
-function SpecialistJobPoller() {
-  const messages = useThread((s) => s.messages);
-  const appendMessages = useThread((s) => s.appendMessages);
-  usePendingSpecialistJobs({ messages, appendMessages });
-  return null;
-}
+// NOTA: o polling de jobs em background agora é feito pelo <JobProgressCard>,
+// que intercepta o `check_job` na própria mensagem do assistant e renderiza
+// progress bar + resultado inline (vale pra ybrax E bioshield specialists).
+// O antigo SpecialistJobPoller (hook use-pending-specialist-jobs) foi removido
+// pra não duplicar polling/mensagens.
 
 // Auto-sincroniza o threadId selecionado quando o ChatProvider monta —
 // chama selectThread após fetchThreadList carregar pela primeira vez.
@@ -206,6 +242,48 @@ function ThreadSelector({ targetThreadId }: { targetThreadId: string }) {
       selectThread(targetThreadId);
     }
   }, [isLoading, selectedId, targetThreadId, threads, selectThread]);
+
+  return null;
+}
+
+// Restaura o chat ao recarregar a página. O backend (state.db do Hermes) guarda
+// as mensagens por sessão `waves-user-<id>::<thread>`; aqui buscamos as do thread
+// ativo e semeamos o ChatProvider via `setMessages`. Independe da sidebar/lista
+// de threads — só do threadId persistido (localStorage) + o user id da sessão.
+function ThreadRestorer({
+  profileId,
+  fullThreadKey,
+}: {
+  profileId: string;
+  fullThreadKey: string;
+}) {
+  const setMessages = useThread((s) => s.setMessages);
+  const restoredKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!fullThreadKey || restoredKeyRef.current === fullThreadKey) return;
+    const isSwitch = restoredKeyRef.current !== null; // troca de conversa (não 1º load)
+    restoredKeyRef.current = fullThreadKey;
+    // Ao TROCAR de conversa, limpa imediatamente pra não mostrar as mensagens
+    // do thread anterior enquanto o novo carrega.
+    if (isSwitch) setMessages([]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const msgs = await getThreadMessages(profileId, fullThreadKey);
+        if (cancelled || msgs.length === 0) return;
+        const restored = msgs
+          .map(toOpenUIMessage)
+          .filter((m): m is Message => m !== null);
+        if (restored.length) setMessages(restored);
+      } catch {
+        /* sem histórico / rede — começa conversa vazia */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, fullThreadKey, setMessages]);
 
   return null;
 }
@@ -278,6 +356,35 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     }
   };
 
+  // "Nova conversa": novo threadId → nova sessão no gateway (contexto limpo).
+  // O setActiveThreadId persiste em localStorage (effect abaixo); a sidebar
+  // limpa as mensagens da UI.
+  const handleNewChat = () => {
+    setActiveThreadId(newThreadId());
+  };
+
+  // Selecionar uma conversa da lista: a lista traz a CHAVE COMPLETA
+  // (`waves-user-<id>::<thread>`); guardamos a parte CURTA no activeThreadId
+  // (é o que o processMessage manda; o gateway re-prefixa). O ThreadRestorer
+  // (keyed na chave completa derivada) hidrata as mensagens.
+  const handleSelectThread = (fullThreadKey: string) => {
+    const i = fullThreadKey.lastIndexOf("::");
+    const short = i >= 0 ? fullThreadKey.slice(i + 2) : fullThreadKey;
+    setActiveThreadId(short);
+  };
+
+  // Modal de edição de task (caminho B): o onAction dispara "waves:edit-task"
+  // com o id; aqui abrimos o modal nativo (GET dos dados reais + PUT).
+  const [editTaskId, setEditTaskId] = useState<number | null>(null);
+  useEffect(() => {
+    const h = (e: Event) => {
+      const id = (e as CustomEvent<{ taskId: number }>).detail?.taskId;
+      if (typeof id === "number") setEditTaskId(id);
+    };
+    window.addEventListener("waves:edit-task", h);
+    return () => window.removeEventListener("waves:edit-task", h);
+  }, []);
+
   // Adapters do ChatProvider — recalcula quando profile muda
   const threadAdapters = useMemo(
     () => createThreadApiAdapters(activeProfile),
@@ -310,11 +417,19 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         // Captura e limpa os anexos pendentes (sobrevive a retries do payload).
         const attachments = attachmentsRef.current;
         attachmentsRef.current = [];
-        // Retry transparente em erros de rede iniciais (load failed, network
-        // error) — comum em mobile que troca de WiFi/cellular ou suspende a
-        // aba. Só retry se o fetch falhou ANTES de retornar a Response —
-        // depois disso o stream é responsabilidade do openuidev. Se o user
-        // abortou, propaga sem retry.
+
+        // Guarda a requisição exata (follow-up, composer, etc.) para retomar após
+        // queda de rede — ThreadErrorRecovery lê e chama processMessage de novo.
+        const threadKey = `waves-user-${session.user.id}::${activeThreadId}`;
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg?.role === "user" && lastMsg.content != null) {
+          const raw =
+            typeof lastMsg.content === "string"
+              ? lastMsg.content
+              : String(lastMsg.content);
+          if (raw.trim()) savePendingChatRequest(threadKey, raw);
+        }
+
         const payload = JSON.stringify({
           messages: openAIMessageFormat.toApi(messages),
           profile: activeProfile,
@@ -363,28 +478,15 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             : undefined,
         });
 
-        const MAX_ATTEMPTS = 3;
-        let lastErr: unknown = null;
-        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-          try {
-            return await fetch("/api/chat", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: payload,
-              signal: abortController.signal,
-            });
-          } catch (err) {
-            // User abortou (clicou Stop) → propaga sem retry
-            if (abortController.signal.aborted) throw err;
-            if (err instanceof DOMException && err.name === "AbortError") throw err;
-            lastErr = err;
-            // Backoff: 400ms, 800ms (3 tentativas no total)
-            if (attempt < MAX_ATTEMPTS - 1) {
-              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-            }
-          }
-        }
-        throw lastErr ?? new Error("fetch falhou após retries");
+        // Sem retry automático no POST: troca de rede mata o fetch em voo e
+        // repetir o mesmo body não revalida login/thread. Recuperação explícita
+        // em ThreadErrorRecovery (verifyApiSession + getThreadMessages).
+        return fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          signal: abortController.signal,
+        });
       },
     [
       activeProfile,
@@ -396,9 +498,28 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     ],
   );
 
+  // Drawer mobile da sidebar de conversas (#2). Fecha ao trocar de thread.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const handleSessionExpired = useCallback(() => {
+    clearSession();
+    onLogout();
+  }, [onLogout]);
+
+  const fullThreadKey = `waves-user-${session.user.id}::${activeThreadId}`;
+
   return (
     <div className="chat-shell">
       <header className="chat-shell-header">
+        <button
+          type="button"
+          className="chat-shell-hamburger"
+          aria-label="Abrir conversas"
+          onClick={() => setMobileNavOpen((v) => !v)}
+          aria-expanded={mobileNavOpen}
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
         <div className="chat-shell-brand">
           <img
             src="https://devell.com.br/medias/logo-waves-azul.png"
@@ -429,7 +550,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         <div className="chat-shell-header-actions" />
       </header>
 
-      <div className="chat-shell-body">
+      <div className={`chat-shell-body${mobileNavOpen ? " nav-open" : ""}`}>
         <SidebarUserFooter user={session.user} onLogout={onLogout} />
         <ThemeProvider mode={mode}>
           {/* key força remount quando profile muda (adapters/state limpos) */}
@@ -444,15 +565,27 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             deleteThread={threadAdapters.deleteThread}
           >
             <ThreadSelector targetThreadId={activeThreadId} />
-            <SpecialistJobPoller />
+            <ThreadRestorer profileId={activeProfile} fullThreadKey={fullThreadKey} />
+            {mobileNavOpen && (
+              <div
+                className="chat-shell-nav-overlay"
+                onClick={() => setMobileNavOpen(false)}
+                aria-hidden="true"
+              />
+            )}
             <Shell.Container
               logoUrl={mode === "dark" ? "/waves_white.png" : "/waves_blue.png"}
               agentName="Agent"
             >
               <Shell.SidebarContainer>
                 <Shell.SidebarHeader />
-                {/* SidebarThreadHistory desativado — UX confusa enquanto a
-                    persistência por thread não está finalizada. */}
+                <SidebarThreadHistory
+                  profileId={activeProfile}
+                  onNewChat={() => { handleNewChat(); setMobileNavOpen(false); }}
+                  onSelectThread={(k) => { handleSelectThread(k); setMobileNavOpen(false); }}
+                  activeThreadId={activeThreadId}
+                  threadKeyPrefix={`waves-user-${session.user.id}::`}
+                />
                 <Shell.SidebarContent />
               </Shell.SidebarContainer>
               <Shell.ThreadContainer>
@@ -463,6 +596,13 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                     assistantMessage={GenUIAssistantMessage}
                     userMessage={UserMessageView}
                   />
+                  <ThreadErrorRecovery
+                    session={session}
+                    profileId={activeProfile}
+                    fullThreadKey={fullThreadKey}
+                    onSessionExpired={handleSessionExpired}
+                    onScopeRefresh={setUserScope}
+                  />
                 </Shell.ScrollArea>
                 <ChatComposer attachmentsRef={attachmentsRef} />
               </Shell.ThreadContainer>
@@ -470,6 +610,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
           </ChatProvider>
         </ThemeProvider>
       </div>
+      <TaskEditModal taskId={editTaskId} onClose={() => setEditTaskId(null)} />
     </div>
   );
 }

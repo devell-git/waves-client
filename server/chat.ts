@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.mjs";
-import { readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 import {
   getOpenAiCredential,
   getOpenAiBaseUrl,
@@ -893,6 +893,7 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
       wavesSession,
       userScope: body.userScope ?? null,
       cacheTrigger,
+      profileId: gw.id,
     });
   }
 
@@ -1323,16 +1324,66 @@ interface HandleHermesOptions {
    * pro Hermes — habilita múltiplas conversas paralelas por user.
    */
   threadId?: string;
+  /**
+   * ID do profile Hermes resolvido (gw.id). Usado pelo hard path pra gravar o
+   * token do usuário na pasta do PRÓPRIO profile (não vaza token entre profiles).
+   */
+  profileId?: string;
+}
+
+// (HARD PATH 2026-05-29) Persiste o Bearer do usuário logado pra que o profile
+// possa consultar a Waves com o token DELE (e não com o token admin das MCP
+// tools). O script scripts/waves_web_query.py lê esse arquivo por user_id e
+// chama a API → a Waves filtra server-side (200 no escopo, 403 fora). Assim a
+// waves_client passa a escopar igual ao Telegram. Token grava a cada request
+// (sempre o mais fresco); arquivo só-local, chmod 600.
+//
+// Allowlist: só grava pros profiles que de fato consomem (têm o script +
+// CONTEXT). Evita deixar Bearer de usuário no disco onde ninguém usa. Pra
+// habilitar outro profile: (1) adicione o id aqui, (2) copie/escreva o
+// waves_web_query.py no profile, (3) instrua no contexto dele.
+const HARD_PATH_PROFILES = new Set<string>(["bioshield-steve"]);
+const HERMES_PROFILES_ROOT = "/home/bot/.hermes/profiles";
+
+function persistWebSessionToken(
+  profileId: string | undefined,
+  userId: number | string | undefined,
+  wavesSession: WavesSession | undefined,
+  user: HandleHermesOptions["user"],
+): void {
+  try {
+    if (!profileId || !HARD_PATH_PROFILES.has(profileId)) return;
+    if (userId == null || !wavesSession?.accessToken) return;
+    // grava na pasta do PRÓPRIO profile (não vaza token entre profiles)
+    const dir = join(HERMES_PROFILES_ROOT, profileId, "state", "web-sessions");
+    mkdirSync(dir, { recursive: true });
+    const payload = {
+      user_id: userId,
+      email: user?.email ?? null,
+      user_name: user?.name ?? null,
+      access_token: wavesSession.accessToken,
+      environment: wavesSession.environment ?? null,
+      updated_at: new Date().toISOString(),
+    };
+    const file = join(dir, `${userId}.json`);
+    writeFileSync(file, JSON.stringify(payload), { mode: 0o600 });
+  } catch (e) {
+    console.warn(`[chat] persistWebSessionToken falhou:`, e);
+  }
 }
 
 async function handleChatRequestHermes(
   opts: HandleHermesOptions,
 ): Promise<Response> {
-  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId } = opts;
+  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, profileId } = opts;
 
   const t0 = Date.now();
   const elapsed = () => `${Date.now() - t0}ms`;
   console.log(`[chat:timing] ${elapsed()} - handler start (user=${user?.id ?? "anon"}, thread=${threadId ?? "—"})`);
+
+  // Hard path: grava o token do usuário pra o profile consultar a Waves escopado
+  // (só pros profiles na allowlist; cada um na sua própria pasta).
+  persistWebSessionToken(profileId, user?.id, wavesSession, user);
 
   // 1. (REMOVIDO 2026-05-26) Antes carregava spec OpenUI da Waves a cada
   //    request pra montar `toolsHint` no system_prompt. Mas:

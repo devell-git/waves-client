@@ -1,6 +1,10 @@
 "use client";
 
-import { defineComponent } from "@openuidev/react-lang";
+import {
+  defineComponent,
+  BuiltinActionType,
+  useTriggerAction,
+} from "@openuidev/react-lang";
 import { ChevronDown } from "lucide-react";
 import * as React from "react";
 import { z } from "zod";
@@ -8,6 +12,31 @@ import { z } from "zod";
 import { Avatar } from "./avatar";
 import { Progress } from "./progress";
 import { ShadcnBadgeComponent } from "./badge";
+import { actionSchema, type ActionSchema } from "../action";
+import { moveTask } from "../../../api/tasks";
+
+// ─────────────────────────────────────────────────────────────────
+// Drag-and-drop context — provido pelo Kanban, consumido por colunas/cards.
+//
+// O card se auto-esconde quando movido (lê `movedAway` pelo próprio taskId);
+// a coluna alvo renderiza um chip leve com o snapshot do card movido
+// (`movedIn[stageId]`). A persistência é via POST /tasks/:id/move. Em erro,
+// reverte (o card volta pra origem — "snap back").
+
+interface CardSnapshot {
+  taskId: number;
+  title: string;
+  responsibleName?: string;
+}
+interface KanbanDnd {
+  enabled: boolean;
+  movedAway: Set<number>;
+  movedIn: Map<number, CardSnapshot[]>;
+  onDrop: (targetStageId: number, snap: CardSnapshot) => void;
+}
+const KanbanDndContext = React.createContext<KanbanDnd | null>(null);
+
+const DND_MIME = "application/x-waves-task";
 
 // ─────────────────────────────────────────────────────────────────
 // KanbanCard — uma task individual num column
@@ -24,18 +53,22 @@ const KanbanCardSchema = z.object({
   // Conteúdo opcional que aparece embaixo do card quando expandido (click no card).
   // Usa z.any() pra evitar ciclo com unions.ts.
   expandable: z.array(z.any()).optional(),
+  // Torna o CARD INTEIRO clicável (ex.: pra editar a task). Mesmo schema do
+  // Button. Use `{type:'continue_conversation', context:'Editar task 651'}` —
+  // o `context` vira a mensagem enviada ao agente ao clicar.
+  action: actionSchema,
 });
 
 export const KanbanCard = defineComponent({
   name: "KanbanCard",
   props: KanbanCardSchema,
   description:
-    "Card de uma task individual no Kanban. title obrigatório, demais opcionais. " +
-    "badges: pequenos rótulos no topo (ex.: ['15d 6h']). progress: 0-100. " +
+    "Card de uma task individual no Kanban. title obrigatório. " +
+    "🔑 SEMPRE inclua `id` = o id da task (ex.: id=\"651\") — um card com id vira " +
+    "CLICÁVEL (abre o modal de edição) e ARRASTÁVEL entre colunas (drag-and-drop). " +
+    "NUNCA omita o id. badges: pequenos rótulos no topo (ex.: ['15d 6h']). progress: 0-100. " +
     "responsibleName/Avatar: pessoa responsável. tags: rótulos coloridos. " +
-    "expandable (opcional): array de componentes que aparece embaixo do card " +
-    "quando o user clica nele — use pra mostrar descrição completa, checklist, " +
-    "comentários, dependências sob demanda.",
+    "expandable (opcional): array de componentes que aparece embaixo do card.",
   component: ({ props, renderNode }) => {
     const badges = (props.badges ?? []) as string[];
     const tags = (props.tags ?? []) as string[];
@@ -46,12 +79,75 @@ export const KanbanCard = defineComponent({
     const hasExpandable = expandable.length > 0;
     const [open, setOpen] = React.useState(false);
 
+    const triggerAction = useTriggerAction();
+    const action = props.action as ActionSchema | undefined;
+    const hasAction = !!action;
+    // Task id = id da task → card vira editável (clique abre o modal nativo).
+    // O agente às vezes erra a posição do `id` e ele cai em `status` (que normal
+    // seria "To Do"/"In Progress", não um número) — então aceitamos id numérico
+    // vindo de `id` OU de `status`. Assim o agente só precisa incluir o número.
+    const numeric = (v: unknown): string | undefined =>
+      typeof v === "string" && /^\d+$/.test(v.trim()) ? v.trim() : undefined;
+    const taskId = numeric(props.id) ?? numeric(props.status);
+    const autoEditable = !hasAction && !hasExpandable && !!taskId;
+
+    const dnd = React.useContext(KanbanDndContext);
+    const taskIdNum = taskId ? Number(taskId) : undefined;
+    const draggable = !!(dnd?.enabled && taskIdNum);
+
+    // Se foi movido pra outra coluna, some daqui (a coluna alvo mostra o chip).
+    if (dnd && taskIdNum && dnd.movedAway.has(taskIdNum)) {
+      return null;
+    }
+
+    // Clique no card: ação explícita > auto-editar (id) > expandir.
+    const handleCardClick = () => {
+      if (hasAction) {
+        const actionType = action?.type ?? BuiltinActionType.ContinueConversation;
+        if (actionType === BuiltinActionType.OpenUrl) {
+          triggerAction(String(props.title ?? ""), undefined, {
+            type: actionType,
+            params: { url: (action as { url?: string }).url },
+          });
+          return;
+        }
+        // continue_conversation OU custom (ex.: edit_task): repassa o `context`
+        // como mensagem e os `params` (ex.: {task_id}) pro onAction.
+        const params = (action as { params?: Record<string, unknown> })?.params;
+        const msg =
+          (action as { context?: string })?.context || String(props.title ?? "task");
+        triggerAction(msg, undefined, { type: actionType, params });
+      } else if (autoEditable) {
+        triggerAction(`Editar task ${taskId}`, undefined, {
+          type: "edit_task",
+          params: { task_id: Number(taskId) },
+        });
+      } else if (hasExpandable) {
+        setOpen((v) => !v);
+      }
+    };
+    const clickable = hasAction || autoEditable || hasExpandable;
+
     return (
       <div
+        draggable={draggable}
+        onDragStart={
+          draggable
+            ? (e) => {
+                const snap: CardSnapshot = {
+                  taskId: taskIdNum!,
+                  title: String(props.title ?? ""),
+                  responsibleName,
+                };
+                e.dataTransfer.setData(DND_MIME, JSON.stringify(snap));
+                e.dataTransfer.effectAllowed = "move";
+              }
+            : undefined
+        }
         className={`rounded-md border bg-card p-2.5 shadow-sm space-y-2 transition-colors ${
-          hasExpandable ? "cursor-pointer hover:bg-accent/50" : ""
-        }`}
-        onClick={hasExpandable ? () => setOpen((v) => !v) : undefined}
+          clickable ? "cursor-pointer hover:bg-accent/50" : ""
+        } ${draggable ? "active:opacity-60" : ""}`}
+        onClick={clickable ? handleCardClick : undefined}
       >
         {(badges.length > 0 || hasExpandable) && (
           <div className="flex items-start justify-between gap-1">
@@ -59,7 +155,7 @@ export const KanbanCard = defineComponent({
               {badges.map((b, i) => (
                 <span
                   key={i}
-                  className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded border border-border bg-muted text-foreground"
                 >
                   {b}
                 </span>
@@ -127,6 +223,21 @@ export const KanbanCard = defineComponent({
   },
 });
 
+// Chip leve que representa um card movido pra esta coluna (otimista).
+function MovedInChip({ snap }: { snap: CardSnapshot }) {
+  return (
+    <div className="rounded-md border border-dashed border-primary/50 bg-primary/5 p-2.5 shadow-sm space-y-1">
+      <div className="text-sm font-medium leading-snug">{snap.title}</div>
+      <div className="flex items-center gap-1 text-[10px] text-primary">
+        <span>✓ movida para cá</span>
+      </div>
+      {snap.responsibleName && (
+        <div className="text-xs text-muted-foreground truncate">{snap.responsibleName}</div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────
 // KanbanColumn — uma coluna (stage) com header + cards
 
@@ -135,6 +246,10 @@ const KanbanColumnSchema = z.object({
   color: z.string().optional(),
   count: z.number().optional(),
   cards: z.array(KanbanCard.ref),
+  // 🔑 stageId = funnel_stage_id da etapa. Necessário pra DRAG-AND-DROP:
+  // soltar um card aqui move a task pra esta etapa. Vem DEPOIS de cards
+  // (último posicional) pra não quebrar `KanbanColumn(name, color, count, cards)`.
+  stageId: z.union([z.string(), z.number()]).optional(),
 });
 
 export const KanbanColumn = defineComponent({
@@ -142,11 +257,37 @@ export const KanbanColumn = defineComponent({
   props: KanbanColumnSchema,
   description:
     "Coluna do Kanban (um stage). name: nome da coluna; color: hex (#dc3545) para borda " +
-    "superior; count: número de tasks; cards: array de KanbanCard.",
+    "superior; count: número de tasks; cards: array de KanbanCard. " +
+    "🔑 stageId = funnel_stage_id desta etapa — inclua SEMPRE para habilitar arrastar " +
+    "cards entre colunas (drag-and-drop move a task pra etapa onde foi solta).",
   component: ({ props, renderNode }) => {
     const cards = (props.cards ?? []) as unknown[];
     const color = props.color as string | undefined;
     const count = props.count as number | undefined;
+    const stageIdRaw = props.stageId as string | number | undefined;
+    const stageId =
+      stageIdRaw != null && /^\d+$/.test(String(stageIdRaw))
+        ? Number(stageIdRaw)
+        : undefined;
+
+    const dnd = React.useContext(KanbanDndContext);
+    const [over, setOver] = React.useState(false);
+    const droppable = !!(dnd?.enabled && stageId != null);
+    const movedIn = (stageId != null && dnd?.movedIn.get(stageId)) || [];
+
+    const onDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setOver(false);
+      if (!droppable) return;
+      const raw = e.dataTransfer.getData(DND_MIME);
+      if (!raw) return;
+      try {
+        const snap = JSON.parse(raw) as CardSnapshot;
+        dnd!.onDrop(stageId!, snap);
+      } catch {
+        /* ignora payload inválido */
+      }
+    };
 
     return (
       <div className="flex flex-col min-w-[260px] max-w-[300px] bg-muted/40 rounded-lg overflow-hidden flex-shrink-0">
@@ -163,11 +304,33 @@ export const KanbanColumn = defineComponent({
             )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[600px]">
-          {cards.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-4">Sem tasks</div>
+        <div
+          className={`flex-1 overflow-y-auto p-2 space-y-2 max-h-[600px] transition-colors ${
+            over ? "bg-primary/10 ring-2 ring-inset ring-primary/40" : ""
+          }`}
+          onDragOver={
+            droppable
+              ? (e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (!over) setOver(true);
+                }
+              : undefined
+          }
+          onDragLeave={droppable ? () => setOver(false) : undefined}
+          onDrop={droppable ? onDrop : undefined}
+        >
+          {cards.length === 0 && movedIn.length === 0 ? (
+            <div className="text-xs text-muted-foreground text-center py-4">
+              {droppable && over ? "Solte aqui" : "Sem tasks"}
+            </div>
           ) : (
-            renderNode(cards)
+            <>
+              {renderNode(cards)}
+              {movedIn.map((snap) => (
+                <MovedInChip key={`moved-${snap.taskId}`} snap={snap} />
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -189,23 +352,71 @@ export const Kanban = defineComponent({
   description:
     "Board Kanban (estilo Trello/Jira). columns: array de KanbanColumn em layout horizontal " +
     "com scroll. title: cabeçalho opcional acima do board. Use para visualizar tasks " +
-    "agrupadas por stage/status. NÃO use Stack(horizontal) pra simular kanban — use este " +
-    "componente que tem scroll horizontal nativo, alturas iguais e visual de board.",
+    "agrupadas por stage/status. Inclua `id` em cada KanbanCard e `stageId` em cada " +
+    "KanbanColumn para habilitar arrastar tasks entre etapas. NÃO use Stack(horizontal) " +
+    "pra simular kanban — use este componente.",
   component: ({ props, renderNode }) => {
     const columns = (props.columns ?? []) as unknown[];
     const title = props.title as string | undefined;
 
+    // Estado de DnD do board (otimista + persistência via /move).
+    const [movedAway, setMovedAway] = React.useState<Set<number>>(() => new Set());
+    const [movedIn, setMovedIn] = React.useState<Map<number, CardSnapshot[]>>(
+      () => new Map(),
+    );
+
+    const onDrop = React.useCallback(
+      (targetStageId: number, snap: CardSnapshot) => {
+        // Otimista: some da origem, aparece na coluna alvo.
+        setMovedAway((s) => new Set(s).add(snap.taskId));
+        setMovedIn((m) => {
+          const next = new Map(m);
+          // remove de qualquer coluna anterior (re-drag) e adiciona na nova
+          for (const [k, arr] of next) {
+            const f = arr.filter((c) => c.taskId !== snap.taskId);
+            if (f.length) next.set(k, f);
+            else next.delete(k);
+          }
+          next.set(targetStageId, [...(next.get(targetStageId) ?? []), snap]);
+          return next;
+        });
+        // Persiste; em erro, reverte (snap back).
+        moveTask(snap.taskId, targetStageId).catch((err) => {
+          console.error("[kanban] falha ao mover task:", err);
+          setMovedAway((s) => {
+            const n = new Set(s);
+            n.delete(snap.taskId);
+            return n;
+          });
+          setMovedIn((m) => {
+            const next = new Map(m);
+            const arr = (next.get(targetStageId) ?? []).filter(
+              (c) => c.taskId !== snap.taskId,
+            );
+            if (arr.length) next.set(targetStageId, arr);
+            else next.delete(targetStageId);
+            return next;
+          });
+        });
+      },
+      [],
+    );
+
+    const dnd: KanbanDnd = { enabled: true, movedAway, movedIn, onDrop };
+
     return (
-      <div className="space-y-2">
-        {title && <div className="text-sm font-semibold px-1">{title}</div>}
-        <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-          {columns.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-4">Kanban vazio.</div>
-          ) : (
-            renderNode(columns)
-          )}
+      <KanbanDndContext.Provider value={dnd}>
+        <div className="space-y-2">
+          {title && <div className="text-sm font-semibold px-1">{title}</div>}
+          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+            {columns.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-4">Kanban vazio.</div>
+            ) : (
+              renderNode(columns)
+            )}
+          </div>
         </div>
-      </div>
+      </KanbanDndContext.Provider>
     );
   },
 });

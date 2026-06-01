@@ -157,7 +157,8 @@ export function toOpenUIMessage(m: ThreadMessage): Message | null {
   }
 }
 
-function stripFormStateWrapper(raw: string): string {
+/** Texto legível da mensagem user (remove wrappers de form/follow-up). */
+export function stripFormStateWrapper(raw: string): string {
   const m = raw.match(/<content>([\s\S]*?)<\/content>/);
   if (m && m[1]) return m[1].trim();
   if (raw === "__form_cnpj__") return "Consultar CNPJ";

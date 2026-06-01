@@ -12,11 +12,14 @@ import {
 } from "@openuidev/react-lang";
 import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
+import * as React from "react";
 import { z } from "zod";
 
 const DatePickerSchema = z.object({
   name: z.string(),
   placeholder: z.string().optional(),
+  // Data inicial (ISO ou YYYY-MM-DD) — usado no form de EDIÇÃO (prazo atual).
+  value: z.string().optional(),
 });
 
 export const DatePicker = defineComponent({
@@ -31,6 +34,20 @@ export const DatePicker = defineComponent({
 
     const fieldName = props.name as string;
     const saved = getFieldValue(formName, fieldName) as string | undefined;
+
+    // Semeia o prazo inicial (props.value) no estado do form, se vazio.
+    React.useEffect(() => {
+      if (!props.value) return;
+      const cur = getFieldValue(formName, fieldName);
+      if (cur == null || cur === "") {
+        const d = new Date(props.value as string);
+        if (!Number.isNaN(d.getTime())) {
+          setFieldValue(formName, "DatePicker", fieldName, d.toISOString(), false);
+        }
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const date = saved ? new Date(saved) : undefined;
 
     return (

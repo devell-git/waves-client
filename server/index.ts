@@ -94,6 +94,7 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
       init.body = JSON.stringify(req.body ?? {});
     }
     const upstream = await fetch(url, init);
+    console.log(`[waves-proxy] ${req.method} ${upstreamPath} → ${upstream.status}`);
     res.status(upstream.status);
     const ct = upstream.headers.get("content-type");
     if (ct) res.setHeader("content-type", ct);

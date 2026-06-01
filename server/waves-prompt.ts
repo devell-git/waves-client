@@ -154,6 +154,19 @@ Exemplos:
 ❌ "Status de cada AP" iterando 29 APs = 30s+ tool calls.
 ✅ "3 APs com prazo crítico" + followUp pra "Ver todos os 29 APs".
 
+## Follow-up "Ver tasks de [responsável]" (clique no botão do chat)
+
+Quando o user clicar num FollowUpItem tipo "Ver tasks da KC Soares" / "Ver tasks
+do Tognetti" depois de uma tabela por responsável:
+
+- **1 única** chamada de dados (ex.: \`get_workflow_tasks\` ou kanban já em
+  contexto) — filtre pelo nome no JSON retornado; **não** chame \`get_task\` por
+  linha.
+- Mostre no máximo **15 tasks** na Table; se houver mais, KPI + followUp
+  "Ver mais 15".
+- Meta de tempo total **< 25s** — no mobile o Safari aborta ~60-90s e o chat
+  mostra "Load failed".
+
 ## Sucinto por default, análise quando o user pede
 
 **Pergunta factual** ("quantos", "qual status", "tasks em atraso") →

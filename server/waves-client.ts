@@ -85,16 +85,23 @@ export async function getWavesUser(
   session: WavesSession,
 ): Promise<{ id: number } & Record<string, unknown>> {
   const body = (await wavesFetch(session, "/user")) as Record<string, unknown>;
-  // A Waves pode devolver {data: {...}} ou o objeto direto.
-  const raw =
+  // A Waves devolve {status, data: {user: {id, ...}}}; também aceitamos
+  // {data: {id}} ou o objeto direto, por robustez a variações de shape.
+  const data =
     body && typeof body === "object" && "data" in body && body.data
       ? (body.data as Record<string, unknown>)
       : body;
-  const id = Number((raw as { id?: unknown })?.id);
+  const userObj =
+    data && typeof data === "object" && "user" in data && data.user
+      ? (data.user as Record<string, unknown>)
+      : data;
+  const id = Number(
+    (userObj as { id?: unknown })?.id ?? (data as { id?: unknown })?.id,
+  );
   if (!Number.isFinite(id)) {
     throw new Error("Resposta de /user sem id numérico.");
   }
-  return { ...(raw as Record<string, unknown>), id };
+  return { ...(userObj as Record<string, unknown>), id };
 }
 
 export async function listWorkflows(session: WavesSession) {

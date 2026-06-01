@@ -553,9 +553,22 @@ a {
 
 .chat-shell {
   height: 100vh;
+  height: 100dvh; /* dvh: evita o header "rolar" no mobile quando a barra do navegador aparece/some (#1) */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Hambúrguer mobile — abre o drawer de conversas. Escondido no desktop. */
+.chat-shell-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: var(--foreground);
 }
 
 .chat-shell-header {
@@ -567,6 +580,8 @@ a {
   border-bottom: 1px solid var(--legacy-border);
   background: var(--surface);
   flex-shrink: 0;
+  position: relative;
+  z-index: 60;
 }
 
 /* ============================================================================
@@ -687,6 +702,47 @@ a {
 
 .chat-shell-body > * {
   height: 100%;
+}
+
+/* Erro de rede no chat — esconde callout duplicado da lib openui (fica só waves-thread-error) */
+.openui-shell-thread-error,
+.openui-shell-thread-messages .openui-shell-thread-error {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.waves-thread-error {
+  margin: 0.75rem 1rem 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in oklch, var(--destructive) 35%, transparent);
+  background: color-mix(in oklch, var(--destructive) 8%, var(--card));
+}
+
+.waves-thread-error__title {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--destructive);
+}
+
+.waves-thread-error__detail {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+.waves-thread-error__hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  font-style: italic;
 }
 
 /* ============================================================================
@@ -838,6 +894,13 @@ a {
 
 .user-menu-popover--portal {
   z-index: 10000;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .user-menu-popover--portal {
+    max-width: calc(100vw - 16px);
+  }
 }
 
 [data-theme="dark"] .user-menu-popover {
@@ -1630,6 +1693,23 @@ a {
   background: var(--background);
 }
 
+/* Sidebar RECOLHIDO: só o ícone "+" — esconde o texto "Nova conversa", a busca
+   e a lista de títulos (que ficariam espremidos). Mesmo padrão do user-footer. */
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"] .thread-new-label,
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"] .thread-search,
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"] .thread-history-list {
+  display: none;
+}
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"] .thread-new-btn {
+  justify-content: center;
+  gap: 0;
+  padding: 0.4rem;
+}
+.openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"] .thread-history-panel {
+  padding: 0.4rem 0.25rem 0;
+  overflow: visible;
+}
+
 .thread-history {
   display: flex;
   flex-direction: column;
@@ -1669,12 +1749,37 @@ a {
   cursor: pointer;
 }
 
+/* Painel da lista de conversas: coluna flex que ocupa o espaço disponível do
+   sidebar SEM crescer além dele (min-height:0) — assim só a lista rola e o
+   footer do usuário continua visível no rodapé. */
+.thread-history-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem 0;
+}
+/* Botão "Nova conversa" e a busca ficam fixos; só a lista rola. */
+.thread-history-panel > .thread-new-btn,
+.thread-history-panel > .thread-search {
+  flex-shrink: 0;
+}
+
+/* Shell.SidebarContent fica VAZIO (a lista de conversas é nosso painel) — sem
+   isto ele teria flex:1 e roubaria metade da altura do painel. */
+.openui-shell-sidebar-content:empty {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
 .thread-history-list {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
   overflow-y: auto;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -2207,4 +2312,280 @@ a {
 .waves-file-download__err {
   font-size: 0.75rem;
   color: var(--destructive, #dc2626);
+}
+
+/* ============================================================================
+   #1 header fixo + #2 drawer mobile de conversas + #3 progress bar de jobs
+   (adicionado 2026-05-30)
+   ============================================================================ */
+
+/* O header já é flex-shrink:0 dentro de .chat-shell (flex column + 100dvh),
+   logo NÃO rola — o corpo é que tem o scroll interno. O 100dvh acima corrige
+   o caso mobile em que 100vh deixava o header ser empurrado pela barra do
+   navegador. */
+
+/* --- Progress bar de job em background (#3) --- */
+.job-progress {
+  border: 1px solid var(--legacy-border, #e5e7eb);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin: 0.5rem 0;
+  background: var(--surface, #fff);
+}
+
+/* Variante compacta — caixa pequena enquanto o conteúdo do job não renderiza (#3) */
+.job-progress--compact {
+  padding: 0.55rem 0.75rem;
+  margin: 0.35rem 0;
+  max-width: 360px;
+}
+.job-progress__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.job-progress--compact .job-progress__title { font-size: 0.85rem; font-weight: 500; }
+.job-progress__pct {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted-foreground, #6b7280);
+}
+.job-progress--compact .job-progress__bar { height: 6px; }
+
+.job-progress__head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.job-progress__title { font-weight: 600; font-size: 0.95rem; color: var(--foreground); }
+.job-progress__spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--muted-foreground, #9ca3af);
+  border-top-color: transparent;
+  animation: job-spin 0.8s linear infinite;
+  display: inline-block;
+}
+@keyframes job-spin { to { transform: rotate(360deg); } }
+.job-progress__bar {
+  height: 8px; border-radius: 999px;
+  background: var(--background, #f1f5f9);
+  overflow: hidden;
+}
+.job-progress__fill {
+  height: 100%; border-radius: 999px;
+  background: var(--legacy-primary, #2563eb);
+  transition: width 0.6s ease;
+}
+.job-progress__sub { margin-top: 0.5rem; font-size: 0.8rem; color: var(--muted-foreground, #6b7280); }
+.job-progress--error { border-color: var(--destructive, #dc2626); }
+.job-progress--error .job-progress__title { color: var(--destructive, #dc2626); }
+
+/* --- Overlay do drawer mobile (#2) --- */
+.chat-shell-nav-overlay { display: none; }
+
+/* ============================================================================
+   Mobile (<768px, alinhado ao openui-shell-container--mobile): hambúrguer +
+   drawer de conversas com lista/busca/usuário visíveis
+   ============================================================================ */
+@media (max-width: 767px) {
+  .chat-shell-hamburger {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .chat-shell-brand {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .profile-select-trigger {
+    min-width: 0;
+    max-width: 9.5rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.82rem;
+  }
+
+  /* OpenUI esconde sidebar collapsed com left:-294px — drawer Waves sob o header */
+  .chat-shell-body:has(.openui-shell-container--mobile) .openui-shell-sidebar-container {
+    position: fixed !important;
+    top: var(--chat-shell-header-height, 3.25rem) !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    height: auto !important;
+    z-index: 55;
+    width: min(84vw, 320px) !important;
+    max-width: 320px;
+    padding: 0.5rem 0.65rem 0.75rem;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    box-shadow: none;
+    background: var(--surface, #fff);
+    cursor: default;
+    gap: 0.35rem;
+  }
+
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile) .openui-shell-sidebar-container {
+    transform: translateX(0) !important;
+    width: min(84vw, 320px) !important;
+    box-shadow: 2px 0 20px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Drawer aberto: forçar layout expandido (lista, busca, labels) */
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-new-label,
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-search,
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-history-list {
+    display: flex !important;
+  }
+
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-search {
+    display: block !important;
+  }
+
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-new-label {
+    display: inline !important;
+  }
+
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .openui-shell-sidebar-user-footer
+    .user-menu-chevron,
+  .chat-shell-body:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container:not(.openui-shell-sidebar-container--collapsed)
+    .openui-shell-sidebar-user-footer
+    .user-menu-chevron {
+    display: inline-flex !important;
+    align-self: center;
+  }
+
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .user-menu-info,
+  .chat-shell-body:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container:not(.openui-shell-sidebar-container--collapsed)
+    .user-menu-info {
+    display: flex !important;
+    flex-direction: column !important;
+    min-width: 0;
+  }
+
+  .openui-shell-container--mobile .user-menu-trigger {
+    align-items: flex-start;
+  }
+
+  .openui-shell-container--mobile .user-menu-email {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .chat-shell-body.nav-open:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-new-btn,
+  .chat-shell-body:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container:not(.openui-shell-sidebar-container--collapsed)
+    .thread-new-btn {
+    justify-content: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .chat-shell-body:has(.openui-shell-container--mobile) .thread-history-panel {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Overlay Waves (OpenUI tem overlay próprio; escondemos o deles no mobile) */
+  .chat-shell-body:has(.openui-shell-container--mobile)
+    .openui-shell-sidebar-container__overlay {
+    display: none !important;
+  }
+
+  .chat-shell-nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 54;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .chat-shell-body .openui-shell-thread-container,
+  .chat-shell-body .openui-shell-container {
+    width: 100%;
+  }
+
+  /* Header interno do shell (logo Agent) — drawer já tem ☰ no topo */
+  .openui-shell-container--mobile .openui-shell-mobile-header {
+    display: none;
+  }
+}
+
+/* Tablet estreito: hambúrguer sem drawer OpenUI (<900 mas >=768) */
+@media (min-width: 768px) and (max-width: 900px) {
+  .chat-shell-hamburger { display: inline-flex; align-items: center; }
+
+  .chat-shell-body .openui-shell-sidebar-container {
+    position: fixed;
+    top: var(--chat-shell-header-height, 3.25rem);
+    left: 0;
+    bottom: 0;
+    z-index: 55;
+    width: min(84vw, 320px);
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    box-shadow: none;
+    background: var(--surface, #fff);
+  }
+
+  .chat-shell-body.nav-open .openui-shell-sidebar-container {
+    transform: translateX(0);
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.18);
+  }
+
+  .chat-shell-body.nav-open
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-new-label,
+  .chat-shell-body.nav-open
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-search,
+  .chat-shell-body.nav-open
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-history-list {
+    display: flex !important;
+  }
+
+  .chat-shell-body.nav-open
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-search {
+    display: block !important;
+  }
+
+  .chat-shell-body.nav-open
+    .openui-shell-sidebar-container[data-sidebar-visual-state="collapsed"]
+    .thread-new-label {
+    display: inline !important;
+  }
+
+  .chat-shell-nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 54;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .chat-shell-body .openui-shell-thread-container,
+  .chat-shell-body .openui-shell-container {
+    width: 100%;
+  }
 }

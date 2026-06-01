@@ -16,7 +16,15 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-function isSidebarCollapsed(trigger: HTMLElement): boolean {
+function isMobileLayout(trigger: HTMLElement): boolean {
+  if (trigger.closest(".openui-shell-container--mobile")) return true;
+  if (trigger.closest(".chat-shell-body.nav-open")) return true;
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+/** Rail estreito no desktop — popover abre à direita do avatar. */
+function isDesktopCollapsedRail(trigger: HTMLElement): boolean {
+  if (isMobileLayout(trigger)) return false;
   const sidebar = trigger.closest(".openui-shell-sidebar-container");
   if (!sidebar) return false;
   return (
@@ -27,22 +35,32 @@ function isSidebarCollapsed(trigger: HTMLElement): boolean {
 
 function computePopoverStyle(trigger: HTMLElement): CSSProperties {
   const rect = trigger.getBoundingClientRect();
-  const collapsed = isSidebarCollapsed(trigger);
+  const pad = 8;
+  const viewportW = window.innerWidth;
 
-  if (collapsed) {
+  if (isDesktopCollapsedRail(trigger)) {
     return {
       position: "fixed",
       left: rect.right + 8,
       bottom: window.innerHeight - rect.bottom,
       minWidth: "11.5rem",
       width: "max-content",
+      maxWidth: viewportW - rect.right - 16,
     };
   }
 
+  // Mobile e sidebar expandida: menu acima do botão, largura limitada à tela
+  const width = Math.min(rect.width, viewportW - pad * 2);
+  const left = Math.min(
+    Math.max(pad, rect.left),
+    viewportW - width - pad,
+  );
+
   return {
     position: "fixed",
-    left: rect.left,
-    width: rect.width,
+    left,
+    width,
+    maxWidth: viewportW - pad * 2,
     bottom: window.innerHeight - rect.top + 6,
   };
 }

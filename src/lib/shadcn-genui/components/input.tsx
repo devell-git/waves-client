@@ -19,6 +19,8 @@ const InputSchema = z.object({
   placeholder: z.string().optional(),
   type: z.enum(["text", "email", "password", "number", "url"]).optional(),
   rules: rulesSchema,
+  // Valor inicial — usado no form de EDIÇÃO (ex.: título atual). Número ou string.
+  value: z.union([z.string(), z.number()]).optional(),
 });
 
 export const Input = defineComponent({
@@ -36,6 +38,20 @@ export const Input = defineComponent({
     const fieldName = props.name as string;
     const rules = React.useMemo(() => parseStructuredRules(props.rules), [props.rules]);
     const savedValue = getFieldValue(formName, fieldName) ?? "";
+    // Valor inicial: o do form (se já mexeu) ou o props.value (edição).
+    const initialValue =
+      (savedValue as string) ||
+      (props.value != null ? String(props.value) : "");
+
+    // Semeia props.value no estado do form, se vazio (pra submeter mesmo intocado).
+    React.useEffect(() => {
+      if (props.value == null) return;
+      const cur = getFieldValue(formName, fieldName);
+      if (cur == null || cur === "") {
+        setFieldValue(formName, "Input", fieldName, String(props.value), false);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     React.useEffect(() => {
       if (!isStreaming && rules.length > 0 && formValidation) {
@@ -51,7 +67,7 @@ export const Input = defineComponent({
         name={fieldName}
         placeholder={props.placeholder}
         type={props.type ?? "text"}
-        defaultValue={savedValue as string}
+        defaultValue={initialValue}
         onBlur={(e) => {
           const val = e.target.value;
           if (val !== savedValue) setFieldValue(formName, "Input", fieldName, val, true);

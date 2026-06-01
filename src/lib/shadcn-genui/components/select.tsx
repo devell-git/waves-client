@@ -37,6 +37,9 @@ const SelectSchema = z.object({
   items: z.array(SelectItem.ref),
   placeholder: z.string().optional(),
   rules: rulesSchema,
+  // Valor inicial (id da opção pré-selecionada) — usado no form de EDIÇÃO pra
+  // já vir com o valor atual da task. Aceita número ou string.
+  value: z.union([z.string(), z.number()]).optional(),
 });
 
 export const Select = defineComponent({
@@ -53,6 +56,16 @@ export const Select = defineComponent({
     const fieldName = props.name as string;
     const rules = React.useMemo(() => parseStructuredRules(props.rules), [props.rules]);
     const value = getFieldValue(formName, fieldName) as string | undefined;
+
+    // Semeia o valor inicial (props.value) no estado do form, se ainda vazio.
+    React.useEffect(() => {
+      if (props.value == null) return;
+      const cur = getFieldValue(formName, fieldName);
+      if (cur == null || cur === "") {
+        setFieldValue(formName, "Select", fieldName, String(props.value), false);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     React.useEffect(() => {
       if (!isStreaming && rules.length > 0 && formValidation) {
