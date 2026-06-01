@@ -31,6 +31,7 @@ import { fetchRuntime, type RuntimeInfo, type ProfileStarter } from "../api/runt
 import { fetchSkills, type SkillMeta } from "../api/skills";
 import { SidebarUserFooter } from "./SidebarUserFooter";
 import { SidebarThreadHistory } from "./SidebarThreadHistory";
+import { Toaster, toast } from "sonner";
 import { TaskEditModal } from "./TaskEditModal";
 import { TaskCreateModal } from "./TaskCreateModal";
 import {
@@ -644,12 +645,20 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
           </ChatProvider>
         </ThemeProvider>
       </div>
-      <TaskEditModal taskId={editTaskId} onClose={() => setEditTaskId(null)} />
+      <TaskEditModal
+        taskId={editTaskId}
+        onClose={() => setEditTaskId(null)}
+        onSaved={() => toast.success("Tarefa atualizada")}
+      />
       <TaskCreateModal
         workflowId={createCtx?.workflowId ?? null}
         initialStageId={createCtx?.stageId ?? null}
         onClose={() => setCreateCtx(null)}
+        onCreated={(id) =>
+          toast.success(id ? `Tarefa #${id} criada` : "Tarefa criada")
+        }
       />
+      <Toaster richColors position="top-center" />
     </div>
   );
 }
