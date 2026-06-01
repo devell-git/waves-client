@@ -78,6 +78,7 @@ import { Stack } from "./components/stack";
 // quando pedido for "kanban", "board", "agrupar por stage".
 import { Kanban, KanbanCard, KanbanColumn } from "./components/kanban";
 import { WorkflowKanban } from "./components/workflow-kanban";
+import { TaskList } from "./components/task-list";
 
 // Collapsible — bloco único colapsável (não confundir com Accordion, que é
 // lista de seções). Usar para "ver mais", "detalhes", "notas avançadas".
@@ -256,11 +257,12 @@ export const shadcnComponentGroups: ComponentGroup[] = [
     ],
   },
   {
-    name: "Kanban (board)",
-    components: ["WorkflowKanban"],
+    name: "Kanban / Lista de tasks (data-driven via Query)",
+    components: ["WorkflowKanban", "TaskList"],
     notes: [
-      '- 🔑 Para QUALQUER kanban/board de workflow, use SEMPRE: `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca os dados e o componente monta colunas/cards/drag/edição/"+ Nova" sozinho.',
-      "- NÃO chame tool de dados (get_workflow_kanban/list_tasks) você mesmo pra montar o kanban, NÃO liste tasks, NÃO monte KanbanCard à mão. Isso gasta milhares de tokens à toa — o WorkflowKanban faz tudo pelo runtime, sem LLM.",
+      '- 🔑 KANBAN de workflow: SEMPRE `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca; o componente monta colunas/cards/drag/edição/"+ Nova".',
+      '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
+      "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
       "- workflow_id: use o do contexto (AP/kanban mencionado). Se não souber, pergunte 1 linha.",
       '- `KanbanColumn(name, color?, count?, cards=[...], stageId?)` — uma coluna com header. color: hex (#dc3545) → borda colorida do header. count: número de cards (mostrado como badge). **stageId = funnel_stage_id da etapa** — inclua SEMPRE (vem depois de cards) pra habilitar arrastar cards entre colunas (drag-and-drop move a task pra etapa onde foi solta). Mapeie de stage.id do kanban.',
       '- `KanbanCard(title, badges?, progress?, responsibleName?, responsibleAvatar?, tags?, id?, expandable?)` — card de uma task. badges: lista curta de strings (ex.: ["15d 6h"]). progress: 0-100 (vira barra). tags: chips coloridos. expandable: array de componentes que aparece embaixo do card quando o user clica (útil pra descrição, checklist, histórico, comentários).',
@@ -493,6 +495,7 @@ export const shadcnChatLibrary = createLibrary({
     KanbanColumn,
     KanbanCard,
     WorkflowKanban,
+    TaskList,
     // Collapsible (bloco único colapsável)
     Collapsible,
     // List/ListItem (lista vertical com marcadores)
