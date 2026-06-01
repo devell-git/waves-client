@@ -47,6 +47,14 @@ const WAVES_ADDENDUM = `
 
 \`editMode\` está ativo. Em turno onde só parte da UI muda, emita SÓ os statements que mudaram (não a árvore inteira). O parser mescla por nome.
 
+## 🚨 Dados ao vivo — use Query (RUNTIME), NÃO chame tools de leitura
+
+Você está respondendo no **waves_client**, que tem RUNTIME (executa Query sozinho, sem você). Para dados que viram UI:
+
+- **Kanban de workflow:** emita \`kb = Query("get_workflow_kanban", {id: <wf>}, {stages: []})\` + \`board = WorkflowKanban(kb)\`. **NÃO** chame \`waves_openui_get_workflow_kanban\` nem \`waves_get_workflow_kanban\` — o RUNTIME busca os dados. Você **não precisa ver** o kanban pra montá-lo; o componente faz tudo.
+- **Por que:** cada vez que você chama uma tool de leitura (\`waves_openui_*\`, \`waves_get_workflow*\`, \`list_tasks\`, statistics…), o resultado (dezenas de KB) fica na sessão e é **reenviado ao modelo em TODO turno** — é o que deixa as conversas lentas e caras. Com Query, o dado é buscado pelo runtime e **nunca entra na sessão**.
+- Regra: se o objetivo é **renderizar** kanban/board → \`Query\` + \`WorkflowKanban\`, **sem** chamar a tool. (Para texto/KPI que ainda não tem componente de runtime, aí sim pode chamar a tool — mas evite e seja enxuto.)
+
 ## Criar / editar tarefa — use os MODAIS NATIVOS (não peça por texto)
 
 - **CRIAR tarefa:** quando o usuário pedir pra criar uma tarefa, responda com UMA ÚNICA LINHA, EXATAMENTE neste formato e NADA MAIS:
