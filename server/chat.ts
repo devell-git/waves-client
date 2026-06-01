@@ -516,6 +516,8 @@ interface ChatRequestBody {
   roles?: string[];
   userScope?: UserScopePayload | null;
   attachments?: AttachmentPayload[];
+  /** Pede o bloco de usage (tokens) no stream. Só quando admin (badge admin-only). */
+  wantUsage?: boolean;
 }
 
 /**
@@ -893,6 +895,7 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
       wavesSession,
       userScope: body.userScope ?? null,
       cacheTrigger,
+      wantUsage: body.wantUsage === true,
       profileId: gw.id,
     });
   }
@@ -1313,6 +1316,8 @@ interface HandleHermesOptions {
   user?: UserInfo;
   wavesSession: WavesSession;
   userScope?: UserScopePayload | null;
+  /** Pede usage de tokens no stream (só admin). */
+  wantUsage?: boolean;
   /**
    * Trigger reconhecido pelo `form-cache` (`__form_cnpj__` / `__form_cpf__`).
    * Quando presente, ao final do stream a resposta agregada é gravada em cache
@@ -1403,7 +1408,7 @@ function truncateOldAssistantUI(
 async function handleChatRequestHermes(
   opts: HandleHermesOptions,
 ): Promise<Response> {
-  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, profileId } = opts;
+  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, profileId, wantUsage } = opts;
 
   const t0 = Date.now();
   const elapsed = () => `${Date.now() - t0}ms`;
@@ -1586,8 +1591,8 @@ async function handleChatRequestHermes(
                 messages: conversation,
                 tools: toolsSchemaForAPI.length > 0 ? toolsSchemaForAPI : undefined,
                 stream: true,
-                // Pede o bloco de usage no fim do stream (tokens da geração).
-                stream_options: { include_usage: true },
+                // Usage (tokens) só quando admin pediu — evita custo pra todos.
+                ...(wantUsage ? { stream_options: { include_usage: true } } : {}),
               }),
             });
 

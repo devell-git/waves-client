@@ -669,6 +669,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
           },
           defaultWorkflowId,
           persona,
+          // Só pede usage de tokens quando admin (o badge é admin-only) — evita
+          // o custo de latência do include_usage pra usuários comuns.
+          wantUsage: isAdmin(),
           permissions: session.effectivePermissions,
           user: {
             id: session.user.id,
