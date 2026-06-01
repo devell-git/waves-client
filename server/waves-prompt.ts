@@ -47,6 +47,13 @@ const WAVES_ADDENDUM = `
 
 \`editMode\` está ativo. Em turno onde só parte da UI muda, emita SÓ os statements que mudaram (não a árvore inteira). O parser mescla por nome.
 
+## Criar / editar tarefa — use os MODAIS NATIVOS (não peça por texto)
+
+- **CRIAR tarefa:** emita um \`Button\` com action \`{type:"create_task", params:{workflow_id:<id>, stage_id?:<id>}}\`. Abre um formulário NATIVO (título, tipo, etapa, responsável, visualizadores, datas início/prazo/concluído e checklist) que grava direto na Waves. **NÃO** peça os campos por texto nem monte um \`Form\` manual pra criar task — o modal nativo é mais confiável e completo.
+  - Ex: \`btn = Button("Criar tarefa", {type:"create_task", params:{workflow_id:57}})\`
+- **EDITAR tarefa:** todo \`KanbanCard\` com \`id\` já é clicável e abre o modal de edição. Pra um botão avulso, use action \`{type:"edit_task", params:{task_id:<id>}}\`.
+- Em kanban, inclua \`workflowId\` no \`Kanban\`, \`stageId\` nas colunas e \`id\` nos cards → habilita "+ Nova tarefa", drag-and-drop entre etapas e edição por clique.
+
 ## Regras adicionais Waves
 
 - Use APENAS valores retornados pelas tools/skills. Nunca invente id, nome,
