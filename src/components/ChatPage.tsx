@@ -123,13 +123,12 @@ function CreateTaskTrigger({
   const wf = directive.workflowId ?? getKanbanCtx().workflowId;
   const st = directive.stageId ?? getKanbanCtx().stageId;
   useEffect(() => {
-    if (wf != null && Number.isFinite(wf)) {
-      window.dispatchEvent(
-        new CustomEvent("waves:create-task", {
-          detail: { workflowId: wf, stageId: st },
-        }),
-      );
-    }
+    // Abre sempre — sem workflow o modal mostra o seletor.
+    window.dispatchEvent(
+      new CustomEvent("waves:create-task", {
+        detail: { workflowId: wf, stageId: st },
+      }),
+    );
     // só no mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,9 +137,7 @@ function CreateTaskTrigger({
       className="assistant-plain-text"
       style={{ padding: "0.75rem 1rem", opacity: 0.8 }}
     >
-      {wf != null && Number.isFinite(wf)
-        ? "Abrindo o formulário de nova tarefa…"
-        : "De qual workflow/AP é a tarefa? Abra um kanban primeiro ou me diga o AP."}
+      Abrindo o formulário de nova tarefa…
     </div>
   );
 }
@@ -534,18 +531,21 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   // Modal de criação de task (caminho B): o botão "+ Nova" do Kanban (ou a ação
   // create_task) dispara "waves:create-task" com {workflowId, stageId}.
   const [createCtx, setCreateCtx] = useState<{
-    workflowId: number;
+    workflowId: number | null;
     stageId?: number | null;
   } | null>(null);
   useEffect(() => {
     const h = (e: Event) => {
       const d = (e as CustomEvent<{ workflowId?: number; stageId?: number }>).detail;
-      if (d?.workflowId != null && Number.isFinite(Number(d.workflowId))) {
-        setCreateCtx({
-          workflowId: Number(d.workflowId),
-          stageId: d.stageId != null ? Number(d.stageId) : null,
-        });
-      }
+      // Abre SEMPRE — sem workflow o modal mostra o seletor de workflow.
+      const wf =
+        d?.workflowId != null && Number.isFinite(Number(d.workflowId))
+          ? Number(d.workflowId)
+          : null;
+      setCreateCtx({
+        workflowId: wf,
+        stageId: d?.stageId != null ? Number(d.stageId) : null,
+      });
     };
     window.addEventListener("waves:create-task", h);
     return () => window.removeEventListener("waves:create-task", h);
@@ -786,6 +786,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         }}
       />
       <TaskCreateModal
+        open={createCtx != null}
         workflowId={createCtx?.workflowId ?? null}
         initialStageId={createCtx?.stageId ?? null}
         onClose={() => setCreateCtx(null)}

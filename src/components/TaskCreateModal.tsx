@@ -12,6 +12,7 @@ import { Button } from "./ui/button";
 import {
   createTask,
   getWorkflowMembers,
+  getWorkflows,
   getWorkflowStages,
   getWorkflowTaskTypes,
   type Member,
@@ -25,12 +26,15 @@ import {
  * POST /tasks — SEM passar pelo LLM (funciona mesmo com o modelo fora do ar).
  */
 export function TaskCreateModal({
-  workflowId,
+  open,
+  workflowId = null,
   initialStageId,
   onClose,
   onCreated,
 }: {
-  workflowId: number | null;
+  open: boolean;
+  /** Workflow pré-selecionado (kanban/AP em contexto). null = mostra seletor. */
+  workflowId?: number | null;
   initialStageId?: number | null;
   onClose: () => void;
   onCreated?: (result: {
@@ -45,6 +49,8 @@ export function TaskCreateModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workflows, setWorkflows] = useState<{ id: number; name: string }[]>([]);
+  const [selectedWf, setSelectedWf] = useState<number | null>(workflowId);
   const [members, setMembers] = useState<Member[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [types, setTypes] = useState<TaskType[]>([]);
@@ -61,12 +67,12 @@ export function TaskCreateModal({
   const [doneDate, setDoneDate] = useState("");
   const [checklist, setChecklist] = useState<string[]>([]);
 
+  // (A) Ao abrir: reseta o form, define o workflow do preset e carrega a lista
+  //     de workflows pro seletor.
   useEffect(() => {
-    if (workflowId == null) return;
-    let cancelled = false;
-    setLoading(true);
+    if (!open) return;
+    setSelectedWf(workflowId ?? null);
     setError(null);
-    // reset
     setTitle("");
     setDescription("");
     setAssignedTo("");
@@ -75,12 +81,38 @@ export function TaskCreateModal({
     setDueDate("");
     setDoneDate("");
     setChecklist([]);
+    let cancelled = false;
+    getWorkflows()
+      .then((w) => {
+        if (!cancelled) setWorkflows(w);
+      })
+      .catch(() => {
+        /* lista do seletor é best-effort */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, workflowId]);
+
+  // (B) Quando o workflow selecionado muda: carrega etapas/tipos/membros dele.
+  useEffect(() => {
+    if (selectedWf == null) {
+      setStages([]);
+      setTypes([]);
+      setMembers([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setAssignedTo("");
+    setViewers([]);
     (async () => {
       try {
         const [mem, stg, typ] = await Promise.all([
-          getWorkflowMembers(workflowId),
-          getWorkflowStages(workflowId),
-          getWorkflowTaskTypes(workflowId),
+          getWorkflowMembers(selectedWf),
+          getWorkflowStages(selectedWf),
+          getWorkflowTaskTypes(selectedWf),
         ]);
         if (cancelled) return;
         setMembers(mem);
@@ -103,7 +135,7 @@ export function TaskCreateModal({
     return () => {
       cancelled = true;
     };
-  }, [workflowId, initialStageId]);
+  }, [selectedWf, initialStageId]);
 
   const toggleViewer = (id: number) =>
     setViewers((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
@@ -114,7 +146,10 @@ export function TaskCreateModal({
   const removeItem = (i: number) => setChecklist((cl) => cl.filter((_, idx) => idx !== i));
 
   const handleCreate = async () => {
-    if (workflowId == null) return;
+    if (selectedWf == null) {
+      setError("Selecione o workflow.");
+      return;
+    }
     if (!title.trim()) {
       setError("Título é obrigatório.");
       return;
@@ -132,7 +167,7 @@ export function TaskCreateModal({
     try {
       const items = checklist.map((c) => c.trim()).filter(Boolean);
       const id = await createTask({
-        workflow_id: workflowId,
+        workflow_id: selectedWf,
         funnel_stage_id: Number(stageId),
         task_type_id: Number(typeId),
         title: title.trim(),
@@ -163,7 +198,7 @@ export function TaskCreateModal({
   };
 
   return (
-    <Dialog open={workflowId != null} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nova tarefa</DialogTitle>
@@ -172,7 +207,28 @@ export function TaskCreateModal({
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
+        <div className="py-2">
+          <Field label="Workflow">
+            <select
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={selectedWf != null ? String(selectedWf) : ""}
+              onChange={(e) => setSelectedWf(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">— selecione o workflow —</option>
+              {workflows.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        {selectedWf == null ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            Selecione um workflow para continuar.
+          </div>
+        ) : loading ? (
           <div className="py-8 text-center text-sm text-muted-foreground">Carregando…</div>
         ) : (
           <div className="space-y-4 py-2">
@@ -324,7 +380,7 @@ export function TaskCreateModal({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handleCreate} disabled={loading || saving}>
+          <Button onClick={handleCreate} disabled={loading || saving || selectedWf == null}>
             {saving ? "Criando…" : "Criar tarefa"}
           </Button>
         </DialogFooter>

@@ -5,6 +5,7 @@
  * escopa server-side (403 fora do acesso).
  */
 import { loadSession } from "../lib/session";
+import { buildWorkflowsListPath, extractWorkflows } from "../../shared/workflows-list";
 
 function authHeaders(): Record<string, string> {
   const s = loadSession();
@@ -159,6 +160,14 @@ export async function updateTask(
         : (body as { message?: string })?.message || `Erro ${r.status} ao salvar`;
     throw new Error(msg);
   }
+}
+
+/** Lista os workflows do usuário (pro seletor do modal de criação). */
+export async function getWorkflows(): Promise<{ id: number; name: string }[]> {
+  const j = await get(buildWorkflowsListPath(1, 200));
+  return extractWorkflows(j)
+    .filter((w) => w?.id != null)
+    .map((w) => ({ id: Number(w.id), name: String(w.name ?? `Workflow ${w.id}`) }));
 }
 
 /** Lista os tipos de task do workflow. GET /workflows/:id/task-types. */

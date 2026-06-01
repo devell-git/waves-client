@@ -110,16 +110,18 @@ export function ChatComposer({
     // modal nativo direto — sem passar pelo agente (que às vezes sugere/pergunta
     // em vez de abrir). Só intercepta se houver workflow de kanban em contexto.
     if (files.length === 0 && CREATE_TASK_INTENT.test(trimmed)) {
-      const wf = getKanbanCtx().workflowId;
-      if (wf != null) {
-        window.dispatchEvent(
-          new CustomEvent("waves:create-task", {
-            detail: { workflowId: wf, stageId: getKanbanCtx().stageId },
-          }),
-        );
-        setText("");
-        return;
-      }
+      // Abre o modal sempre. Com kanban na tela vem o workflow preenchido;
+      // sem kanban, o modal mostra o seletor de workflow.
+      window.dispatchEvent(
+        new CustomEvent("waves:create-task", {
+          detail: {
+            workflowId: getKanbanCtx().workflowId,
+            stageId: getKanbanCtx().stageId,
+          },
+        }),
+      );
+      setText("");
+      return;
     }
 
     let uploaded: UploadedFile[] = [];
