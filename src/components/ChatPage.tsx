@@ -36,9 +36,12 @@ import { TaskEditModal } from "./TaskEditModal";
 import { TaskCreateModal } from "./TaskCreateModal";
 import {
   ProfileSelect,
+  type ProfileOption,
+  buildProfilesFromLogin,
   loadActiveProfileId,
   saveActiveProfileId,
 } from "./ProfileSelect";
+import type { RegistryProfile } from "./ProfileTabs";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import {
   createThreadApiAdapters,
@@ -537,7 +540,31 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   void runtime;
   void skills;
 
-  // Profile selecionado (negative-media | map). Lista fixa por enquanto.
+  // Registry de profiles roteáveis (servidor) — casado com os agentes do login.
+  const [registry, setRegistry] = useState<RegistryProfile[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/profiles")
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive && Array.isArray(d?.profiles)) setRegistry(d.profiles);
+      })
+      .catch(() => {
+        /* sem registry → seletor fica vazio até o servidor responder */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Só aparecem os agentes que vieram no LOGIN e têm gateway roteável
+  // (casados por porta). Rótulo = nome do login; id = profile Hermes real.
+  const availableProfiles = useMemo<ProfileOption[]>(
+    () => buildProfilesFromLogin(registry, session.agents ?? []),
+    [registry, session.agents],
+  );
+
+  // Profile selecionado. Validado contra os disponíveis assim que o login resolve.
   const [activeProfile, setActiveProfile] = useState<string>(() =>
     loadActiveProfileId(),
   );
@@ -564,6 +591,15 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
       setActiveThreadId(stored || newThreadId());
     }
   };
+
+  // Quando os profiles do login chegam, garante que o ativo é um deles.
+  // Se o salvo não estiver disponível pro usuário, troca pro primeiro.
+  useEffect(() => {
+    if (availableProfiles.length === 0) return;
+    if (availableProfiles.some((p) => p.id === activeProfile)) return;
+    handleProfileChange(loadActiveProfileId(availableProfiles));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableProfiles]);
 
   // "Nova conversa": novo threadId → nova sessão no gateway (contexto limpo).
   // O setActiveThreadId persiste em localStorage (effect abaixo); a sidebar
@@ -781,7 +817,11 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             </span>
           )}
         </div>
-        <ProfileSelect activeId={activeProfile} onChange={handleProfileChange} />
+        <ProfileSelect
+          profiles={availableProfiles}
+          activeId={activeProfile}
+          onChange={handleProfileChange}
+        />
         <div className="chat-shell-header-actions" />
       </header>
 

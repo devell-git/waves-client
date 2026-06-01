@@ -34,6 +34,7 @@ const PROFILE_REGISTRY: ProfileSpec[] = [
   { id: "ybrax-negative-media", label: "Mídias Negativas", port: 18862 },
   { id: "ybrax-verifique", label: "Verifique", port: 18864 },
   { id: "bioshield-steve", label: "Steve", port: 18860 },
+  { id: "waves-cfo", label: "CFO", port: 18866 },
 ];
 
 export const DEFAULT_PROFILE_ID = "ybrax-negative-media";

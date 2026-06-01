@@ -13,6 +13,12 @@ export type AgentItem = {
   name?: string;
   title?: string;
   description?: string | null;
+  /** Profile Hermes do agente (ex.: "bioshield-steve", "waves-cfo"). */
+  profile_name?: string;
+  /** Host do gateway (re-registrado pelo Hermes ao subir). */
+  host?: string;
+  /** Porta do gateway — usada pra casar o agente com o profile roteável. */
+  port?: number;
   [key: string]: unknown;
 };
 

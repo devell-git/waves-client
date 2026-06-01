@@ -14,38 +14,83 @@ export interface ProfileOption {
   label: string;
   /** Subtítulo curto pra hover/tooltip. */
   description?: string;
+  /** Porta do gateway roteável (vinda do registry do servidor). */
+  port?: number;
 }
 
-export const PROFILES: ProfileOption[] = [
-  {
-    id: "ybrax-negative-media",
-    label: "Mídias Negativas",
-    description: "Relatório de mídia adversa (CPF/CNPJ)",
-  },
-  {
-    id: "ybrax-verifique",
-    label: "Verifique",
-    description: "Consulta YBRAX — dados Verifique + consultas (MAP, Mídias Negativas, etc.)",
-  },
-  {
-    id: "bioshield-steve",
-    label: "Steve",
-    description: "Assistente BioShield CDMO (workflows + skills + tools Waves)",
-  },
-];
+/** Entrada do registry exposto pelo servidor em `/api/profiles`. */
+export interface RegistryProfile {
+  id: string;
+  label: string;
+  port: number;
+}
+
+/** Agente como vem no login (subset relevante p/ o seletor). */
+export interface LoginAgentLike {
+  name?: string;
+  title?: string;
+  profile_name?: string;
+  port?: number;
+}
+
+/**
+ * Monta a lista do seletor a partir dos agentes que vieram no LOGIN do usuário,
+ * confirmando cada um contra o registry roteável do servidor.
+ *
+ * O casamento é por **porta**: o Hermes re-registra `host:port` na tabela
+ * `agents` do Waves ao subir, então a porta do agente no login bate com a porta
+ * do profile roteável. Isso resolve renomeações (ex.: login traz `ybrax-map`,
+ * mas o profile local é `ybrax-verifique` — ambos na 18864).
+ *
+ * Resultado: só aparecem agentes que (a) vieram no login E (b) têm gateway
+ * roteável no servidor. O rótulo usa o **nome do login**; o id usado pra rotear
+ * é o do registry (profile Hermes real).
+ */
+export function buildProfilesFromLogin(
+  registry: RegistryProfile[],
+  agents: LoginAgentLike[],
+): ProfileOption[] {
+  const byPort = new Map<number, RegistryProfile>();
+  for (const r of registry) byPort.set(r.port, r);
+
+  const out: ProfileOption[] = [];
+  const seen = new Set<string>();
+  for (const a of agents) {
+    if (typeof a.port !== "number") continue;
+    const r = byPort.get(a.port);
+    if (!r || seen.has(r.id)) continue; // agente sem gateway roteável → não aparece
+    seen.add(r.id);
+    out.push({
+      id: r.id,
+      label: a.name ?? a.title ?? r.label,
+      description: `${a.profile_name ?? r.id} · :${r.port}`,
+      port: r.port,
+    });
+  }
+  return out;
+}
 
 export const DEFAULT_PROFILE_ID = "ybrax-negative-media";
 const STORAGE_KEY = "waves-active-profile";
 
-export function loadActiveProfileId(): string {
-  if (typeof window === "undefined") return DEFAULT_PROFILE_ID;
+/**
+ * Lê o profile ativo salvo, validando contra a lista de profiles disponíveis
+ * (os que vieram no login do usuário). Se o salvo não estiver disponível,
+ * cai no primeiro disponível.
+ */
+export function loadActiveProfileId(available?: ProfileOption[]): string {
+  const fallback = available?.[0]?.id ?? DEFAULT_PROFILE_ID;
+  if (typeof window === "undefined") return fallback;
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored && PROFILES.some((p) => p.id === stored)) return stored;
+    if (stored) {
+      if (!available) return stored;
+      if (available.some((p) => p.id === stored)) return stored;
+    }
   } catch {
     // ignora — fallback abaixo
   }
-  return DEFAULT_PROFILE_ID;
+  return fallback;
 }
 
 export function saveActiveProfileId(id: string): void {
@@ -58,14 +103,15 @@ export function saveActiveProfileId(id: string): void {
 }
 
 interface ProfileTabsProps {
+  profiles: ProfileOption[];
   activeId: string;
   onChange: (id: string) => void;
 }
 
-export function ProfileTabs({ activeId, onChange }: ProfileTabsProps) {
+export function ProfileTabs({ profiles, activeId, onChange }: ProfileTabsProps) {
   return (
     <div className="profile-tabs" role="tablist" aria-label="Selecionar profile">
-      {PROFILES.map((p) => {
+      {profiles.map((p) => {
         const active = p.id === activeId;
         return (
           <button

@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  PROFILES,
+  type ProfileOption,
+  buildProfilesFromLogin,
   loadActiveProfileId,
   saveActiveProfileId,
   DEFAULT_PROFILE_ID,
 } from "./ProfileTabs";
 
-export { PROFILES, loadActiveProfileId, saveActiveProfileId, DEFAULT_PROFILE_ID };
+export {
+  buildProfilesFromLogin,
+  loadActiveProfileId,
+  saveActiveProfileId,
+  DEFAULT_PROFILE_ID,
+};
+export type { ProfileOption };
 
 interface ProfileSelectProps {
+  profiles: ProfileOption[];
   activeId: string;
   onChange: (id: string) => void;
 }
@@ -20,7 +28,7 @@ interface ProfileSelectProps {
  * Implementação custom (não usa <select> nativo) pra alinhar com os outros
  * componentes do chat (UserMenu, theme toggle) e suportar descrições.
  */
-export function ProfileSelect({ activeId, onChange }: ProfileSelectProps) {
+export function ProfileSelect({ profiles, activeId, onChange }: ProfileSelectProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +48,10 @@ export function ProfileSelect({ activeId, onChange }: ProfileSelectProps) {
     };
   }, [open]);
 
-  const active = PROFILES.find((p) => p.id === activeId) ?? PROFILES[0]!;
+  const active = profiles.find((p) => p.id === activeId) ?? profiles[0];
+
+  // Sem agentes roteáveis no login → não renderiza o seletor.
+  if (!active) return null;
 
   return (
     <div className="profile-select" ref={rootRef}>
@@ -58,7 +69,7 @@ export function ProfileSelect({ activeId, onChange }: ProfileSelectProps) {
       </button>
       {open && (
         <ul className="profile-select-menu" role="listbox">
-          {PROFILES.map((p) => {
+          {profiles.map((p) => {
             const isActive = p.id === activeId;
             return (
               <li
