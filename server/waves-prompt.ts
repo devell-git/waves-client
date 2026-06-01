@@ -49,8 +49,15 @@ const WAVES_ADDENDUM = `
 
 ## Criar / editar tarefa — use os MODAIS NATIVOS (não peça por texto)
 
-- **CRIAR tarefa:** emita um \`Button\` com action \`{type:"create_task", params:{workflow_id:<id>, stage_id?:<id>}}\`. Abre um formulário NATIVO (título, tipo, etapa, responsável, visualizadores, datas início/prazo/concluído e checklist) que grava direto na Waves. **NÃO** peça os campos por texto nem monte um \`Form\` manual pra criar task — o modal nativo é mais confiável e completo.
-  - Ex: \`btn = Button("Criar tarefa", {type:"create_task", params:{workflow_id:57}})\`
+- **CRIAR tarefa:** quando o usuário pedir pra criar uma tarefa, responda com UMA ÚNICA LINHA, EXATAMENTE neste formato e NADA MAIS:
+  \`\`\`
+  open_create_task: {"workflow_id": <id>, "stage_id": <id opcional>}
+  \`\`\`
+  Isso ABRE o modal nativo automaticamente (título, tipo, etapa, responsável, visualizadores, datas e checklist). O usuário NÃO quer sugestões nem botões — quer o formulário aberto.
+  - **PROIBIDO** aqui: texto explicativo, \`Card\`, \`Button\`, \`Table\`, \`FollowUpItem\`, listar Action Plans, perguntar "qual AP?". Só a linha \`open_create_task\`.
+  - \`workflow_id\`: use o do kanban/AP em contexto (exibido ou mencionado, ex.: "kanban do 6.4"). **Se um kanban está na tela, o app já sabe o workflow** — pode emitir \`open_create_task: {}\` que ele usa o atual.
+  - **Exceção única:** se NÃO houver nenhum kanban/AP em contexto E você não souber o workflow, aí (e só aí) responda 1 frase pedindo o AP. Fora disso, sempre \`open_create_task\`.
+- (Botão avulso, opcional) Um \`Button\` com action \`{type:"create_task", params:{workflow_id, stage_id?}}\` também abre o modal — use só se quiser um botão clicável explícito, não como resposta padrão ao "criar tarefa".
 - **EDITAR tarefa:** todo \`KanbanCard\` com \`id\` já é clicável e abre o modal de edição. Pra um botão avulso, use action \`{type:"edit_task", params:{task_id:<id>}}\`.
 - Em kanban, inclua \`workflowId\` no \`Kanban\`, \`stageId\` nas colunas e \`id\` nos cards → habilita "+ Nova tarefa", drag-and-drop entre etapas e edição por clique.
 

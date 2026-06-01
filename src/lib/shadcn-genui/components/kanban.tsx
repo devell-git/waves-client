@@ -14,6 +14,7 @@ import { Progress } from "./progress";
 import { ShadcnBadgeComponent } from "./badge";
 import { actionSchema, type ActionSchema } from "../action";
 import { moveTask } from "../../../api/tasks";
+import { setKanbanCtx } from "../../kanban-context";
 
 // ─────────────────────────────────────────────────────────────────
 // Drag-and-drop context — provido pelo Kanban, consumido por colunas/cards.
@@ -386,6 +387,13 @@ export const Kanban = defineComponent({
     const wfRaw = props.workflowId as string | number | undefined;
     const workflowId =
       wfRaw != null && /^\d+$/.test(String(wfRaw)) ? Number(wfRaw) : undefined;
+
+    // Memoriza o workflow do kanban exibido — usado pela diretiva
+    // `open_create_task` pra abrir o modal no workflow certo, sem depender do
+    // agente inferir o id.
+    React.useEffect(() => {
+      if (workflowId != null) setKanbanCtx({ workflowId });
+    }, [workflowId]);
 
     // Estado de DnD do board (otimista + persistência via /move).
     const [movedAway, setMovedAway] = React.useState<Set<number>>(() => new Set());

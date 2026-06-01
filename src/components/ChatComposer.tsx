@@ -23,6 +23,13 @@ import {
   type UploadedFile,
   type UploadKind,
 } from "../api/uploads";
+import { getKanbanCtx } from "../lib/kanban-context";
+
+// Intenção de criar tarefa (atalho que abre o modal nativo direto). Casa
+// "criar tarefa", "criar nova tarefa", "nova tarefa", "adicionar task", etc.
+// no INÍCIO da mensagem — evita falsos positivos tipo "como criar tarefa?".
+const CREATE_TASK_INTENT =
+  /^\s*(criar?|crie|cria|nova|novo|adicionar|adiciona|add)\b.{0,24}\b(tarefa|task|atividade|card)\b/i;
 
 interface ChatComposerProps {
   /**
@@ -98,6 +105,22 @@ export function ChatComposer({
     if (busy) return;
     const trimmed = text.trim();
     if (!trimmed && files.length === 0) return;
+
+    // Atalho DETERMINÍSTICO: "criar/nova tarefa" com um kanban na tela abre o
+    // modal nativo direto — sem passar pelo agente (que às vezes sugere/pergunta
+    // em vez de abrir). Só intercepta se houver workflow de kanban em contexto.
+    if (files.length === 0 && CREATE_TASK_INTENT.test(trimmed)) {
+      const wf = getKanbanCtx().workflowId;
+      if (wf != null) {
+        window.dispatchEvent(
+          new CustomEvent("waves:create-task", {
+            detail: { workflowId: wf, stageId: getKanbanCtx().stageId },
+          }),
+        );
+        setText("");
+        return;
+      }
+    }
 
     let uploaded: UploadedFile[] = [];
     if (files.length > 0) {

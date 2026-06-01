@@ -49,6 +49,7 @@ import {
 import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
+import { getKanbanCtx } from "../lib/kanban-context";
 import { savePendingChatRequest } from "../lib/pending-chat-request";
 
 /**
@@ -88,11 +89,71 @@ interface ChatPageProps {
 // bolha de chat simples.
 const OPENUI_PATTERN = /\b(root\s*=|Card\s*\(|CardHeader\s*\(|TextContent\s*\(|Table\s*\(|TagBlock\s*\(|Alert\s*\(|FollowUpItem\s*\(|(?:Pie|Bar|Line)Chart\s*\(|ListBlock\s*\(|Accordion\s*\()/;
 
+// Diretiva `open_create_task: {"workflow_id":..,"stage_id":..}` — o agente emite
+// só isso quando o user pede pra criar tarefa; abrimos o modal nativo direto.
+function parseCreateTaskDirective(
+  content: string,
+): { workflowId?: number; stageId?: number } | null {
+  const t = content.trim();
+  if (!t.startsWith("open_create_task")) return null;
+  // Se abriu `{` mas ainda não fechou (streaming), espera o JSON completar.
+  if (t.includes("{") && !t.includes("}")) return null;
+  const m = t.match(/\{[\s\S]*\}/);
+  let workflowId: number | undefined;
+  let stageId: number | undefined;
+  if (m) {
+    try {
+      const o = JSON.parse(m[0]) as { workflow_id?: unknown; stage_id?: unknown };
+      if (o.workflow_id != null) workflowId = Number(o.workflow_id);
+      if (o.stage_id != null) stageId = Number(o.stage_id);
+    } catch {
+      /* JSON inválido — usa o contexto do kanban */
+    }
+  }
+  return { workflowId, stageId };
+}
+
+// Abre o modal de criação ao montar (dispara waves:create-task). Usa o workflow
+// da diretiva OU, se ausente, o do kanban exibido por último (determinístico).
+function CreateTaskTrigger({
+  directive,
+}: {
+  directive: { workflowId?: number; stageId?: number };
+}) {
+  const wf = directive.workflowId ?? getKanbanCtx().workflowId;
+  const st = directive.stageId ?? getKanbanCtx().stageId;
+  useEffect(() => {
+    if (wf != null && Number.isFinite(wf)) {
+      window.dispatchEvent(
+        new CustomEvent("waves:create-task", {
+          detail: { workflowId: wf, stageId: st },
+        }),
+      );
+    }
+    // só no mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div
+      className="assistant-plain-text"
+      style={{ padding: "0.75rem 1rem", opacity: 0.8 }}
+    >
+      {wf != null && Number.isFinite(wf)
+        ? "Abrindo o formulário de nova tarefa…"
+        : "De qual workflow/AP é a tarefa? Abra um kanban primeiro ou me diga o AP."}
+    </div>
+  );
+}
+
 function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
   const content = typeof message.content === "string" ? message.content : "";
   const processMessage = useThread((s) => s.processMessage);
   const isStreaming = useThread((s) => s.isRunning);
   if (!content) return null;
+
+  // Diretiva de criação de tarefa → abre o modal nativo automaticamente.
+  const createDir = parseCreateTaskDirective(content);
+  if (createDir) return <CreateTaskTrigger directive={createDir} />;
 
   // Job em background (Relatório MAP / Mídias Negativas): o agente emite um
   // `check_job: "<id>"`. Em vez de mostrar o texto cru, renderizamos um card
