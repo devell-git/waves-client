@@ -257,10 +257,11 @@ export const shadcnComponentGroups: ComponentGroup[] = [
   },
   {
     name: "Kanban (board)",
-    components: ["WorkflowKanban", "Kanban", "KanbanColumn", "KanbanCard"],
+    components: ["WorkflowKanban"],
     notes: [
-      '- 🔑 PREFIRA `WorkflowKanban` para kanban de workflow: `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. O componente busca os dados pelo RUNTIME (sem você listar tasks) e monta tudo — colunas, cards, drag, edição e "+ Nova". É MUITO mais barato (não gasta tokens montando cada card) e os filtros/refresh rodam sem LLM.',
-      '- `Kanban(columns=[...], title?, workflowId?)` (manual) só quando você JÁ tem os dados em mãos e precisa montar card a card. **workflowId = id do workflow** → habilita "+ Nova tarefa". Para dados ao vivo, use WorkflowKanban.',
+      '- 🔑 Para QUALQUER kanban/board de workflow, use SEMPRE: `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca os dados e o componente monta colunas/cards/drag/edição/"+ Nova" sozinho.',
+      "- NÃO chame tool de dados (get_workflow_kanban/list_tasks) você mesmo pra montar o kanban, NÃO liste tasks, NÃO monte KanbanCard à mão. Isso gasta milhares de tokens à toa — o WorkflowKanban faz tudo pelo runtime, sem LLM.",
+      "- workflow_id: use o do contexto (AP/kanban mencionado). Se não souber, pergunte 1 linha.",
       '- `KanbanColumn(name, color?, count?, cards=[...], stageId?)` — uma coluna com header. color: hex (#dc3545) → borda colorida do header. count: número de cards (mostrado como badge). **stageId = funnel_stage_id da etapa** — inclua SEMPRE (vem depois de cards) pra habilitar arrastar cards entre colunas (drag-and-drop move a task pra etapa onde foi solta). Mapeie de stage.id do kanban.',
       '- `KanbanCard(title, badges?, progress?, responsibleName?, responsibleAvatar?, tags?, id?, expandable?)` — card de uma task. badges: lista curta de strings (ex.: ["15d 6h"]). progress: 0-100 (vira barra). tags: chips coloridos. expandable: array de componentes que aparece embaixo do card quando o user clica (útil pra descrição, checklist, histórico, comentários).',
       "- Mapeamento ideal do `waves_openui_get_workflow_kanban`: stage.id → KanbanColumn.stageId (OBRIGATÓRIO p/ drag); stage.color → KanbanColumn.color; task.id → KanbanCard.id (OBRIGATÓRIO); task.time_in_current_stage → badges[0]; task.items_completed/items_count → progress; task.responsible.name/avatar → responsibleName/responsibleAvatar; task.task_type.name → tags[0]; task.description ou subtasks → expandable.",
@@ -338,24 +339,16 @@ c2 = Col(header="Label")
 exp1 = [TextContent("Details for row 1"), subTable]
 subTable = Table(columns=[Col(header="sub")], rows=[["x"]])`,
 
-  `Pattern — Kanban de workflow via Query (RUNTIME, SEM LLM — O PREFERIDO p/ dados ao vivo):
-root = Card([board])
-kb = Query("get_workflow_kanban", {id: 57}, {stages: []})
+  `Pattern — Kanban de workflow (SEMPRE assim — RUNTIME, sem LLM):
+root = Card([header, board, fu])
+header = CardHeader("Kanban do AP 6.4")
+kb = Query("get_workflow_kanban", {id: 106}, {stages: []})
 board = WorkflowKanban(kb)
-# O runtime busca o kanban e monta colunas/cards/drag/edição sozinho.
-# Sintaxe Query: nome = Query("tool", {args}, {defaults}). NÃO use $ no nome.
-# Você NÃO precisa listar tasks nem montar cards — só emita a Query + WorkflowKanban.`,
-
-  `Pattern — Kanban nativo MANUAL (só quando você já tem os dados em mãos):
-board = Kanban(columns=[col1, col2, col3], workflowId="57")
-col1 = KanbanColumn("To Do", "#dc3545", 2, [t1, t2], "101")
-col2 = KanbanColumn("In Progress", "#ffc107", 0, [], "102")
-col3 = KanbanColumn("Done", "#198754", 0, [], "103")
-t1 = KanbanCard(title="Title", badges=["15d 6h"], progress=0, responsibleName="Name", tags=["Label"], id="419")
-t2 = KanbanCard(title="Title 2", badges=["10d"], responsibleName="Other", id="420")
-# stageId (último arg de KanbanColumn) = funnel_stage_id da etapa → habilita drag-and-drop.
-# id em CADA KanbanCard = id da task → arrastável + editável.
-# workflowId no Kanban = id do workflow → habilita o botão "+ Nova tarefa" nas colunas.`,
+fu = FollowUpBlock([fu1, fu2, fu3])
+# O runtime busca o kanban e monta colunas/cards/drag/edição/+Nova sozinho.
+# Você NÃO lista tasks, NÃO chama tools de dados, NÃO monta cards. Só Query + WorkflowKanban.
+# Sintaxe Query: nome = Query("tool", {args}, {defaults}) — NÃO use $ no nome.
+# NUNCA use Kanban/KanbanColumn/KanbanCard manual pra kanban de workflow.`,
 
   `Pattern — KanbanCard com expandable (click expande in-place):
 t = KanbanCard(title="Title", badges=["15d 6h"], responsibleName="Name", id="419", expandable=[detail])
