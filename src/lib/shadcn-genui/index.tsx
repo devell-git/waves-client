@@ -257,7 +257,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
     name: "Kanban (board)",
     components: ["Kanban", "KanbanColumn", "KanbanCard"],
     notes: [
-      '- Use `Kanban(columns=[...], title?)` para qualquer pedido com "kanban", "board", "agrupar por stage". É PREFERIDO sobre Stack(direction="horizontal") quando o objetivo for visualizar tasks por estágio.',
+      '- Use `Kanban(columns=[...], title?, workflowId?)` para qualquer pedido com "kanban", "board", "agrupar por stage". É PREFERIDO sobre Stack(direction="horizontal") quando o objetivo for visualizar tasks por estágio. **workflowId = id do workflow** → habilita o botão "+ Nova tarefa" (modal nativo) em cada coluna. Inclua sempre.',
       '- `KanbanColumn(name, color?, count?, cards=[...], stageId?)` — uma coluna com header. color: hex (#dc3545) → borda colorida do header. count: número de cards (mostrado como badge). **stageId = funnel_stage_id da etapa** — inclua SEMPRE (vem depois de cards) pra habilitar arrastar cards entre colunas (drag-and-drop move a task pra etapa onde foi solta). Mapeie de stage.id do kanban.',
       '- `KanbanCard(title, badges?, progress?, responsibleName?, responsibleAvatar?, tags?, id?, expandable?)` — card de uma task. badges: lista curta de strings (ex.: ["15d 6h"]). progress: 0-100 (vira barra). tags: chips coloridos. expandable: array de componentes que aparece embaixo do card quando o user clica (útil pra descrição, checklist, histórico, comentários).',
       "- Mapeamento ideal do `waves_openui_get_workflow_kanban`: stage.id → KanbanColumn.stageId (OBRIGATÓRIO p/ drag); stage.color → KanbanColumn.color; task.id → KanbanCard.id (OBRIGATÓRIO); task.time_in_current_stage → badges[0]; task.items_completed/items_count → progress; task.responsible.name/avatar → responsibleName/responsibleAvatar; task.task_type.name → tags[0]; task.description ou subtasks → expandable.",
@@ -336,14 +336,15 @@ exp1 = [TextContent("Details for row 1"), subTable]
 subTable = Table(columns=[Col(header="sub")], rows=[["x"]])`,
 
   `Pattern — Kanban nativo (board horizontal Trello-style, PREFERIDO sobre Stack direction='row'):
-board = Kanban([col1, col2, col3])
+board = Kanban(columns=[col1, col2, col3], workflowId="57")
 col1 = KanbanColumn("To Do", "#dc3545", 2, [t1, t2], "101")
 col2 = KanbanColumn("In Progress", "#ffc107", 0, [], "102")
 col3 = KanbanColumn("Done", "#198754", 0, [], "103")
 t1 = KanbanCard(title="Title", badges=["15d 6h"], progress=0, responsibleName="Name", tags=["Label"], id="419")
 t2 = KanbanCard(title="Title 2", badges=["10d"], responsibleName="Other", id="420")
 # stageId (último arg de KanbanColumn) = funnel_stage_id da etapa → habilita drag-and-drop.
-# id em CADA KanbanCard = id da task → arrastável + editável.`,
+# id em CADA KanbanCard = id da task → arrastável + editável.
+# workflowId no Kanban = id do workflow → habilita o botão "+ Nova tarefa" nas colunas.`,
 
   `Pattern — KanbanCard com expandable (click expande in-place):
 t = KanbanCard(title="Title", badges=["15d 6h"], responsibleName="Name", id="419", expandable=[detail])

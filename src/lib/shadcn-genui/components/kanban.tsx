@@ -5,7 +5,7 @@ import {
   BuiltinActionType,
   useTriggerAction,
 } from "@openuidev/react-lang";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import * as React from "react";
 import { z } from "zod";
 
@@ -33,6 +33,8 @@ interface KanbanDnd {
   movedAway: Set<number>;
   movedIn: Map<number, CardSnapshot[]>;
   onDrop: (targetStageId: number, snap: CardSnapshot) => void;
+  /** workflow_id do board — habilita o botão "+ Nova tarefa" nas colunas. */
+  workflowId?: number;
 }
 const KanbanDndContext = React.createContext<KanbanDnd | null>(null);
 
@@ -297,11 +299,30 @@ export const KanbanColumn = defineComponent({
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-semibold truncate">{String(props.name)}</span>
-            {typeof count === "number" && (
-              <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
-                {count}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {typeof count === "number" && (
+                <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
+                  {count}
+                </span>
+              )}
+              {dnd?.workflowId != null && stageId != null && (
+                <button
+                  type="button"
+                  title="Nova tarefa nesta etapa"
+                  aria-label="Nova tarefa"
+                  className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("waves:create-task", {
+                        detail: { workflowId: dnd.workflowId, stageId },
+                      }),
+                    )
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div
@@ -344,6 +365,9 @@ export const KanbanColumn = defineComponent({
 const KanbanSchema = z.object({
   columns: z.array(KanbanColumn.ref),
   title: z.string().optional(),
+  // 🔑 workflowId = id do workflow do board. Habilita o botão "+ Nova tarefa"
+  // em cada coluna (abre o modal nativo de criação já com a etapa preenchida).
+  workflowId: z.union([z.string(), z.number()]).optional(),
 });
 
 export const Kanban = defineComponent({
@@ -353,11 +377,15 @@ export const Kanban = defineComponent({
     "Board Kanban (estilo Trello/Jira). columns: array de KanbanColumn em layout horizontal " +
     "com scroll. title: cabeçalho opcional acima do board. Use para visualizar tasks " +
     "agrupadas por stage/status. Inclua `id` em cada KanbanCard e `stageId` em cada " +
-    "KanbanColumn para habilitar arrastar tasks entre etapas. NÃO use Stack(horizontal) " +
-    "pra simular kanban — use este componente.",
+    "KanbanColumn para habilitar arrastar tasks entre etapas. Inclua `workflowId` no " +
+    "Kanban (= id do workflow) para habilitar o botão '+ Nova tarefa' em cada coluna. " +
+    "NÃO use Stack(horizontal) pra simular kanban — use este componente.",
   component: ({ props, renderNode }) => {
     const columns = (props.columns ?? []) as unknown[];
     const title = props.title as string | undefined;
+    const wfRaw = props.workflowId as string | number | undefined;
+    const workflowId =
+      wfRaw != null && /^\d+$/.test(String(wfRaw)) ? Number(wfRaw) : undefined;
 
     // Estado de DnD do board (otimista + persistência via /move).
     const [movedAway, setMovedAway] = React.useState<Set<number>>(() => new Set());
@@ -402,7 +430,7 @@ export const Kanban = defineComponent({
       [],
     );
 
-    const dnd: KanbanDnd = { enabled: true, movedAway, movedIn, onDrop };
+    const dnd: KanbanDnd = { enabled: true, movedAway, movedIn, onDrop, workflowId };
 
     return (
       <KanbanDndContext.Provider value={dnd}>

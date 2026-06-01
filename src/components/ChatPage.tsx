@@ -32,6 +32,7 @@ import { fetchSkills, type SkillMeta } from "../api/skills";
 import { SidebarUserFooter } from "./SidebarUserFooter";
 import { SidebarThreadHistory } from "./SidebarThreadHistory";
 import { TaskEditModal } from "./TaskEditModal";
+import { TaskCreateModal } from "./TaskCreateModal";
 import {
   ProfileSelect,
   loadActiveProfileId,
@@ -138,6 +139,19 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
           if (Number.isFinite(taskId)) {
             window.dispatchEvent(
               new CustomEvent("waves:edit-task", { detail: { taskId } }),
+            );
+          }
+          return;
+        }
+        // create_task: abre o modal NATIVO de criação. params: {workflow_id, stage_id?}.
+        if (event.type === "create_task") {
+          const wf = Number(event.params?.workflow_id ?? event.params?.workflowId);
+          const st = event.params?.stage_id ?? event.params?.funnel_stage_id;
+          if (Number.isFinite(wf)) {
+            window.dispatchEvent(
+              new CustomEvent("waves:create-task", {
+                detail: { workflowId: wf, stageId: st != null ? Number(st) : undefined },
+              }),
             );
           }
           return;
@@ -385,6 +399,26 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     return () => window.removeEventListener("waves:edit-task", h);
   }, []);
 
+  // Modal de criação de task (caminho B): o botão "+ Nova" do Kanban (ou a ação
+  // create_task) dispara "waves:create-task" com {workflowId, stageId}.
+  const [createCtx, setCreateCtx] = useState<{
+    workflowId: number;
+    stageId?: number | null;
+  } | null>(null);
+  useEffect(() => {
+    const h = (e: Event) => {
+      const d = (e as CustomEvent<{ workflowId?: number; stageId?: number }>).detail;
+      if (d?.workflowId != null && Number.isFinite(Number(d.workflowId))) {
+        setCreateCtx({
+          workflowId: Number(d.workflowId),
+          stageId: d.stageId != null ? Number(d.stageId) : null,
+        });
+      }
+    };
+    window.addEventListener("waves:create-task", h);
+    return () => window.removeEventListener("waves:create-task", h);
+  }, []);
+
   // Adapters do ChatProvider — recalcula quando profile muda
   const threadAdapters = useMemo(
     () => createThreadApiAdapters(activeProfile),
@@ -611,6 +645,11 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         </ThemeProvider>
       </div>
       <TaskEditModal taskId={editTaskId} onClose={() => setEditTaskId(null)} />
+      <TaskCreateModal
+        workflowId={createCtx?.workflowId ?? null}
+        initialStageId={createCtx?.stageId ?? null}
+        onClose={() => setCreateCtx(null)}
+      />
     </div>
   );
 }

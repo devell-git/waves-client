@@ -36,6 +36,10 @@ export interface Stage {
   id: number;
   name: string;
 }
+export interface TaskType {
+  id: number;
+  name: string;
+}
 
 function unwrap(j: unknown, key?: string): unknown {
   const d = (j as { data?: unknown })?.data ?? j;
@@ -155,6 +159,59 @@ export async function updateTask(
         : (body as { message?: string })?.message || `Erro ${r.status} ao salvar`;
     throw new Error(msg);
   }
+}
+
+/** Lista os tipos de task do workflow. GET /workflows/:id/task-types. */
+export async function getWorkflowTaskTypes(workflowId: number): Promise<TaskType[]> {
+  const j = await get(`/workflows/${workflowId}/task-types`);
+  const obj = (j ?? {}) as Record<string, unknown>;
+  const data = (obj.data ?? obj) as Record<string, unknown>;
+  const raw = (data.task_types ?? data.taskTypes ?? data.rows ?? data ?? []) as Array<{
+    id?: number;
+    name?: string;
+  }>;
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .filter((t) => t?.id != null)
+    .map((t) => ({ id: Number(t.id), name: String(t.name ?? `Tipo ${t.id}`) }));
+}
+
+export interface CreateTaskInput {
+  workflow_id: number;
+  funnel_stage_id: number;
+  task_type_id: number;
+  title: string;
+  description?: string;
+  assigned_to?: number;
+  start_date?: string;
+  due_date?: string;
+  done_date?: string;
+  checklist?: string[];
+  visible_to_users?: number[];
+}
+
+/** Cria uma task. POST /tasks. Retorna o id criado (quando disponível). */
+export async function createTask(input: CreateTaskInput): Promise<number | null> {
+  const r = await fetch(`/api/waves/tasks`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) {
+    const b = await r.json().catch(() => ({}));
+    const msg =
+      r.status === 403
+        ? "Sem permissão pra criar tarefa neste workflow."
+        : r.status === 422
+          ? (b as { message?: string })?.message ||
+            "Tipo de tarefa incompatível com a etapa (422)."
+          : (b as { message?: string })?.message || `Erro ${r.status} ao criar`;
+    throw new Error(msg);
+  }
+  const j = await r.json().catch(() => ({}));
+  const t = unwrap(j, "task") as Record<string, unknown> | undefined;
+  const id = Number(t?.id ?? (j as { id?: unknown })?.id);
+  return Number.isFinite(id) ? id : null;
 }
 
 /** Move a task pra outra etapa (drag-and-drop no Kanban). POST /tasks/:id/move. */
