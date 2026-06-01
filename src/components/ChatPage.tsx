@@ -280,6 +280,57 @@ function ChatAppendListener() {
   return null;
 }
 
+// ─── Card de feedback (openui-lang) pra criar/editar tarefa ───────────────
+// Escapa strings pro openui-lang (aspas quebram o parser) e limita tamanho.
+function escOL(s: string): string {
+  return String(s).replace(/[\r\n]+/g, " ").replace(/[\\"]/g, "'").slice(0, 120);
+}
+function fmtBR(d?: string): string | undefined {
+  if (!d) return undefined;
+  const [y, m, day] = d.split("-");
+  return y && m && day ? `${day}/${m}/${y}` : d;
+}
+interface TaskFeedback {
+  id: number | null;
+  title: string;
+  stageName?: string;
+  assigneeName?: string;
+  dueDate?: string;
+  checklistCount?: number;
+}
+function buildTaskCard(variant: "created" | "updated", r: TaskFeedback): string {
+  const header = variant === "created" ? "✅ Tarefa criada" : "✏️ Tarefa atualizada";
+  const sub = `${r.id != null ? `#${r.id} — ` : ""}${escOL(r.title)}`;
+  const defs: string[] = [];
+  const refs: string[] = [];
+  const addTag = (label: string, v: string) => {
+    const name = `tg${refs.length + 1}`;
+    refs.push(name);
+    defs.push(`${name} = Tag("${escOL(label)}", "${v}")`);
+  };
+  if (r.stageName) addTag(`Etapa: ${r.stageName}`, "secondary");
+  if (r.assigneeName) addTag(`Resp.: ${r.assigneeName}`, "outline");
+  const due = fmtBR(r.dueDate);
+  if (due) addTag(`Prazo: ${due}`, "default");
+  if (r.checklistCount && r.checklistCount > 0) {
+    addTag(`Checklist: ${r.checklistCount} ${r.checklistCount === 1 ? "item" : "itens"}`, "outline");
+  }
+  const lines = [
+    `root = Card([h${refs.length ? ", tags" : ""}])`,
+    `h = CardHeader("${header}", "${sub}")`,
+  ];
+  if (refs.length) {
+    lines.push(`tags = TagBlock([${refs.join(", ")}])`);
+    lines.push(...defs);
+  }
+  return lines.join("\n");
+}
+function appendTaskCard(variant: "created" | "updated", r: TaskFeedback): void {
+  window.dispatchEvent(
+    new CustomEvent("waves:chat-append", { detail: { content: buildTaskCard(variant, r) } }),
+  );
+}
+
 // Restaura o chat ao recarregar a página. O backend (state.db do Hermes) guarda
 // as mensagens por sessão `waves-user-<id>::<thread>`; aqui buscamos as do thread
 // ativo e semeamos o ChatProvider via `setMessages`. Independe da sidebar/lista
@@ -668,28 +719,18 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
       <TaskEditModal
         taskId={editTaskId}
         onClose={() => setEditTaskId(null)}
-        onSaved={({ id, title }) => {
+        onSaved={(r) => {
           toast.success("Tarefa atualizada");
-          window.dispatchEvent(
-            new CustomEvent("waves:chat-append", {
-              detail: { content: `✏️ Tarefa #${id} atualizada${title ? `: ${title}` : ""}` },
-            }),
-          );
+          appendTaskCard("updated", r);
         }}
       />
       <TaskCreateModal
         workflowId={createCtx?.workflowId ?? null}
         initialStageId={createCtx?.stageId ?? null}
         onClose={() => setCreateCtx(null)}
-        onCreated={({ id, title }) => {
-          toast.success(id ? `Tarefa #${id} criada` : "Tarefa criada");
-          window.dispatchEvent(
-            new CustomEvent("waves:chat-append", {
-              detail: {
-                content: `✅ Tarefa criada${title ? `: ${title}` : ""}${id ? ` (#${id})` : ""}`,
-              },
-            }),
-          );
+        onCreated={(r) => {
+          toast.success(r.id ? `Tarefa #${r.id} criada` : "Tarefa criada");
+          appendTaskCard("created", r);
         }}
       />
       <Toaster richColors position="top-center" />

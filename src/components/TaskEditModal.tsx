@@ -72,7 +72,13 @@ export function TaskEditModal({
 }: {
   taskId: number | null;
   onClose: () => void;
-  onSaved?: (result: { id: number; title: string }) => void;
+  onSaved?: (result: {
+    id: number;
+    title: string;
+    stageName?: string;
+    assigneeName?: string;
+    dueDate?: string;
+  }) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -160,7 +166,15 @@ export function TaskEditModal({
     setError(null);
     try {
       await updateTask(orig.id, patch);
-      onSaved?.({ id: orig.id, title: title.trim() || orig.title });
+      onSaved?.({
+        id: orig.id,
+        title: title.trim() || orig.title,
+        stageName: stages.find((s) => String(s.id) === stageId)?.name,
+        assigneeName: assignedTo
+          ? members.find((m) => String(m.id) === assignedTo)?.name
+          : undefined,
+        dueDate: dueDate || undefined,
+      });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao salvar.");
