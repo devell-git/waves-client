@@ -50,6 +50,7 @@ import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import { getKanbanCtx } from "../lib/kanban-context";
+import { ensureToolProvider, getToolProvider } from "../lib/openui-tools";
 import {
   setAdminFlag,
   isAdmin,
@@ -241,6 +242,7 @@ function GenUIAssistantMessage({
       response={content}
       library={shadcnChatLibrary}
       isStreaming={isStreaming}
+      toolProvider={getToolProvider() ?? undefined}
       onAction={(event) => {
         // edit_task: abre o modal NATIVO de edição (caminho B) — GET ao clicar,
         // sem passar pelo LLM. O card/botão emite {type:'edit_task', params:{task_id}}.
@@ -522,6 +524,14 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
       cancelled = true;
     };
   }, [session]);
+
+  // Monta o toolProvider (runtime EXECUTE do OpenUI) uma vez — Query()/Mutation()
+  // resolvem direto pelas tools nativas da Waves, sem passar pelo LLM.
+  useEffect(() => {
+    ensureToolProvider().catch((e) =>
+      console.warn("[openui] toolProvider falhou:", e),
+    );
+  }, []);
 
   void buildConversationStarters;
   void runtime;
