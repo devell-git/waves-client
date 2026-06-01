@@ -1,4 +1,5 @@
 import { FileSpreadsheet, FileText } from "lucide-react";
+import { fmtTime, messageTime } from "../lib/message-meta";
 
 /**
  * Renderer custom da mensagem do USER (passado em `<Shell.Messages userMessage>`).
@@ -21,7 +22,12 @@ interface MessagePart {
 }
 
 interface UserMessageViewProps {
-  message: { role?: string; content?: string | MessagePart[] };
+  message: {
+    role?: string;
+    content?: string | MessagePart[];
+    id?: string;
+    timestamp?: number;
+  };
 }
 
 /** Remove as tags internas do protocolo de continuação pra exibir só o texto humano. */
@@ -96,6 +102,16 @@ export function UserMessageView({ message }: UserMessageViewProps) {
           </div>
         )}
         {text && <div className="waves-msg-text">{text}</div>}
+        <div
+          style={{
+            fontSize: "0.7rem",
+            opacity: 0.5,
+            marginTop: "0.2rem",
+            textAlign: "right",
+          }}
+        >
+          {fmtTime(messageTime(message.id, message.timestamp))}
+        </div>
       </div>
     </div>
   );

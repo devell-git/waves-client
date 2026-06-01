@@ -706,7 +706,7 @@ function buildScopeContext(body: ChatRequestBody): string {
     if (scope.workflows && scope.workflows.length) {
       lines.push("");
       lines.push(`**Workflows visíveis (${scope.workflows.length}):**`);
-      const max = 30;
+      const max = 15;
       for (const w of scope.workflows.slice(0, max)) {
         const label = w.name ?? w.title ?? `(sem nome)`;
         lines.push(`- \`${w.id}\` — ${label}`);
@@ -726,7 +726,7 @@ function buildScopeContext(body: ChatRequestBody): string {
     if (scope.assistants && scope.assistants.length) {
       lines.push("");
       lines.push(`**Assistentes visíveis (${scope.assistants.length}):**`);
-      const max = 25;
+      const max = 12;
       for (const a of scope.assistants.slice(0, max)) {
         const label = a.name ?? a.title ?? `(sem nome)`;
         lines.push(`- \`${a.id}\` — ${label}`);
@@ -743,7 +743,7 @@ function buildScopeContext(body: ChatRequestBody): string {
     if (scope.bookings && scope.bookings.length) {
       lines.push("");
       lines.push(`**Agendas visíveis (${scope.bookings.length}):**`);
-      const max = 25;
+      const max = 12;
       for (const b of scope.bookings.slice(0, max)) {
         const label = b.booking_name ?? b.name ?? b.title ?? `(sem nome)`;
         lines.push(`- \`${b.id}\` — ${label}`);
@@ -757,7 +757,7 @@ function buildScopeContext(body: ChatRequestBody): string {
     if (scope.funnels && scope.funnels.length) {
       lines.push("");
       lines.push(`**Funis visíveis (${scope.funnels.length}):**`);
-      const max = 12;
+      const max = 8;
       for (const f of scope.funnels.slice(0, max)) {
         const stageBits = (f.stages ?? [])
           .filter((s) => !s.hidden)
@@ -1372,6 +1372,34 @@ function persistWebSessionToken(
   }
 }
 
+/**
+ * Economia de tokens: as respostas `assistant` antigas são openui-lang longo
+ * (um kanban = vários k tokens). O modelo raramente precisa da UI antiga
+ * renderizada — só do que ela significou. Mantém as últimas `keepLast` cheias
+ * e troca as anteriores por um marcador curto (com dica do título).
+ */
+const OPENUI_HINT_RE =
+  /\b(root\s*=|Card\s*\(|CardHeader\s*\(|Kanban\s*\(|Table\s*\(|TagBlock\s*\(|BarChart\s*\(|PieChart\s*\(|ListBlock\s*\(|Steps\s*\(|FollowUpBlock\s*\()/;
+
+function truncateOldAssistantUI(
+  msgs: Array<Record<string, unknown>>,
+  keepLast = 1,
+): Array<Record<string, unknown>> {
+  const assistantIdx = msgs
+    .map((m, i) => (m.role === "assistant" ? i : -1))
+    .filter((i) => i >= 0);
+  const keep = new Set(assistantIdx.slice(-keepLast));
+  return msgs.map((m, i) => {
+    if (m.role !== "assistant" || keep.has(i)) return m;
+    const c = m.content;
+    if (typeof c === "string" && c.length > 200 && OPENUI_HINT_RE.test(c)) {
+      const title = c.match(/CardHeader\(\s*["']([^"']{0,60})/)?.[1];
+      return { ...m, content: `[UI renderizada anteriormente${title ? `: ${title}` : ""}]` };
+    }
+    return m;
+  });
+}
+
 async function handleChatRequestHermes(
   opts: HandleHermesOptions,
 ): Promise<Response> {
@@ -1405,15 +1433,17 @@ async function handleChatRequestHermes(
   const toolsHint = "";
 
   // 2. Limpa mensagens
-  const cleanMessages = (messages as Array<Record<string, unknown>>)
-    .filter((m) => m.role !== "tool")
-    .map((m) => {
-      if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
-        const { tool_calls: _tc, ...rest } = m;
-        return rest;
-      }
-      return m;
-    });
+  const cleanMessages = truncateOldAssistantUI(
+    (messages as Array<Record<string, unknown>>)
+      .filter((m) => m.role !== "tool")
+      .map((m) => {
+        if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+          const { tool_calls: _tc, ...rest } = m;
+          return rest;
+        }
+        return m;
+      }),
+  );
 
   // 3. Examples dinâmicos: kanban/funnel renderizados com DADOS REAIS do user.
   //    Steve vê estrutura com ids/nomes próprios → copia padrão natural em vez
@@ -1534,6 +1564,9 @@ async function handleChatRequestHermes(
 
       let totalAssistantContent = "";
       let toolCallIdx = 0;
+      // Acumula tokens da geração (somados entre turnos do loop).
+      let usagePrompt = 0;
+      let usageCompletion = 0;
 
       (async () => {
         try {
@@ -1553,6 +1586,8 @@ async function handleChatRequestHermes(
                 messages: conversation,
                 tools: toolsSchemaForAPI.length > 0 ? toolsSchemaForAPI : undefined,
                 stream: true,
+                // Pede o bloco de usage no fim do stream (tokens da geração).
+                stream_options: { include_usage: true },
               }),
             });
 
@@ -1654,11 +1689,21 @@ async function handleChatRequestHermes(
                     };
                     finish_reason?: string | null;
                   }>;
+                  usage?: {
+                    prompt_tokens?: number;
+                    completion_tokens?: number;
+                  };
                 };
                 try {
                   ev = JSON.parse(payload);
                 } catch {
                   continue;
+                }
+                // Bloco de usage (chunk sem choices, vem no fim quando
+                // include_usage). Acumula entre turnos.
+                if (ev.usage) {
+                  usagePrompt += Number(ev.usage.prompt_tokens ?? 0);
+                  usageCompletion += Number(ev.usage.completion_tokens ?? 0);
                 }
                 const choice = ev.choices?.[0];
                 if (!choice) continue;
@@ -1802,6 +1847,22 @@ async function handleChatRequestHermes(
           // Limpa buffer de progress — request finalizada, frontend não
           // precisa mais mostrar tool em execução.
           clearProgress();
+
+          // Marcador de usage (tokens da geração) — o frontend extrai e mostra
+          // só pra admin. Vai como content num comentário HTML (o renderer e o
+          // parser openui-lang ignoram; o GenUIAssistantMessage tira na exibição).
+          if (usagePrompt > 0 || usageCompletion > 0) {
+            const marker = `\n<!--waves-usage:{"p":${usagePrompt},"c":${usageCompletion},"t":${usagePrompt + usageCompletion}}-->`;
+            enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: "chatcmpl-usage",
+                  object: "chat.completion.chunk",
+                  choices: [{ index: 0, delta: { content: marker }, finish_reason: null }],
+                })}\n\n`,
+              ),
+            );
+          }
 
           enqueue(encoder.encode("data: [DONE]\n\n"));
           close();

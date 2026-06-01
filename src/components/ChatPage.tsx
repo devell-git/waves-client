@@ -50,6 +50,14 @@ import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import { getKanbanCtx } from "../lib/kanban-context";
+import {
+  setAdminFlag,
+  isAdmin,
+  messageTime,
+  fmtTime,
+  extractUsage,
+} from "../lib/message-meta";
+import { isAdminUser } from "../lib/permissions";
 import { savePendingChatRequest } from "../lib/pending-chat-request";
 
 /**
@@ -142,11 +150,51 @@ function CreateTaskTrigger({
   );
 }
 
-function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
-  const content = typeof message.content === "string" ? message.content : "";
+// Rodapé de cada mensagem: horário + (admin) tokens da geração. Mensagem
+// nativa (sem chamada LLM) não tem usage → mostra "0 tok".
+function MessageMeta({
+  id,
+  timestamp,
+  usage,
+}: {
+  id?: string;
+  timestamp?: number;
+  usage: ReturnType<typeof extractUsage>["usage"];
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "0.5rem",
+        alignItems: "center",
+        fontSize: "0.7rem",
+        opacity: 0.5,
+        padding: "0.1rem 1rem 0.35rem",
+      }}
+    >
+      <span>{fmtTime(messageTime(id, timestamp))}</span>
+      {isAdmin() && (
+        <span title="Tokens da geração (P=prompt, C=completion)">
+          🪙 {usage ? `${usage.t} tok · P:${usage.p}/C:${usage.c}` : "0 tok"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function GenUIAssistantMessage({
+  message,
+}: {
+  message: { id?: string; content?: string; timestamp?: number };
+}) {
+  const rawContent = typeof message.content === "string" ? message.content : "";
   const processMessage = useThread((s) => s.processMessage);
   const isStreaming = useThread((s) => s.isRunning);
-  if (!content) return null;
+  if (!rawContent) return null;
+
+  // Separa o marcador de usage do conteúdo renderável.
+  const { clean: content, usage } = extractUsage(rawContent);
+  const meta = <MessageMeta id={message.id} timestamp={message.timestamp} usage={usage} />;
 
   // Diretiva de criação de tarefa → abre o modal nativo automaticamente.
   const createDir = parseCreateTaskDirective(content);
@@ -174,17 +222,21 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
   // Texto puro (sem construções openui-lang) → bolha de chat simples
   if (!OPENUI_PATTERN.test(content)) {
     return (
-      <div className="assistant-plain-text" style={{
-        padding: "0.75rem 1rem",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-      }}>
-        {content}
-      </div>
+      <>
+        <div className="assistant-plain-text" style={{
+          padding: "0.75rem 1rem",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}>
+          {content}
+        </div>
+        {meta}
+      </>
     );
   }
 
   return (
+    <>
     <Renderer
       response={content}
       library={shadcnChatLibrary}
@@ -245,6 +297,8 @@ function GenUIAssistantMessage({ message }: { message: { content?: string } }) {
         }
       }}
     />
+    {meta}
+    </>
   );
 }
 
@@ -433,6 +487,8 @@ function ThreadRestorer({
 
 export function ChatPage({ session, onLogout }: ChatPageProps) {
   const mode = useTheme();
+  // Flag de admin (vem no escopo do login) — habilita o badge de tokens.
+  setAdminFlag(isAdminUser(session.roles, session.user.type));
   const [userScope, setUserScope] = useState<UserScope | null>(null);
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillMeta[]>([]);

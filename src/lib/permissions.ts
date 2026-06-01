@@ -16,6 +16,17 @@ export function hasPermission(
   return permissions.includes(permission);
 }
 
+/** Admin = role ou type contendo "admin" (vem no escopo do login). */
+export function isAdminUser(
+  roles: readonly string[] | undefined,
+  userType?: string,
+): boolean {
+  return (
+    (roles ?? []).some((r) => /admin/i.test(r)) ||
+    (userType != null && /admin/i.test(userType))
+  );
+}
+
 export function canAccessWorkflows(permissions: readonly string[]): boolean {
   return hasPermission(permissions, PERM.VIEW_WORKFLOW);
 }
