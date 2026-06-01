@@ -33,7 +33,7 @@ export function TaskCreateModal({
   workflowId: number | null;
   initialStageId?: number | null;
   onClose: () => void;
-  onCreated?: (taskId: number | null) => void;
+  onCreated?: (result: { id: number | null; title: string }) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -137,7 +137,7 @@ export function TaskCreateModal({
         ...(items.length ? { checklist: items } : {}),
         ...(viewers.length ? { visible_to_users: viewers } : {}),
       });
-      onCreated?.(id);
+      onCreated?.({ id, title: title.trim() });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao criar.");

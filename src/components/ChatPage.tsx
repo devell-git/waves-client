@@ -261,6 +261,25 @@ function ThreadSelector({ targetThreadId }: { targetThreadId: string }) {
   return null;
 }
 
+// Insere uma mensagem (assistant) no chat sem passar pelo LLM. Usado pra
+// devolver no chat o feedback de ações nativas (ex.: "✅ Tarefa criada"),
+// disparado via CustomEvent `waves:chat-append`. Precisa estar DENTRO do
+// ChatProvider (os modais ficam fora e não acessam `appendMessages`).
+function ChatAppendListener() {
+  const appendMessages = useThread((s) => s.appendMessages);
+  useEffect(() => {
+    const h = (e: Event) => {
+      const content = (e as CustomEvent<{ content: string }>).detail?.content;
+      if (typeof content === "string" && content) {
+        appendMessages({ id: crypto.randomUUID(), role: "assistant", content });
+      }
+    };
+    window.addEventListener("waves:chat-append", h);
+    return () => window.removeEventListener("waves:chat-append", h);
+  }, [appendMessages]);
+  return null;
+}
+
 // Restaura o chat ao recarregar a página. O backend (state.db do Hermes) guarda
 // as mensagens por sessão `waves-user-<id>::<thread>`; aqui buscamos as do thread
 // ativo e semeamos o ChatProvider via `setMessages`. Independe da sidebar/lista
@@ -601,6 +620,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
           >
             <ThreadSelector targetThreadId={activeThreadId} />
             <ThreadRestorer profileId={activeProfile} fullThreadKey={fullThreadKey} />
+            <ChatAppendListener />
             {mobileNavOpen && (
               <div
                 className="chat-shell-nav-overlay"
@@ -648,15 +668,29 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
       <TaskEditModal
         taskId={editTaskId}
         onClose={() => setEditTaskId(null)}
-        onSaved={() => toast.success("Tarefa atualizada")}
+        onSaved={({ id, title }) => {
+          toast.success("Tarefa atualizada");
+          window.dispatchEvent(
+            new CustomEvent("waves:chat-append", {
+              detail: { content: `✏️ Tarefa #${id} atualizada${title ? `: ${title}` : ""}` },
+            }),
+          );
+        }}
       />
       <TaskCreateModal
         workflowId={createCtx?.workflowId ?? null}
         initialStageId={createCtx?.stageId ?? null}
         onClose={() => setCreateCtx(null)}
-        onCreated={(id) =>
-          toast.success(id ? `Tarefa #${id} criada` : "Tarefa criada")
-        }
+        onCreated={({ id, title }) => {
+          toast.success(id ? `Tarefa #${id} criada` : "Tarefa criada");
+          window.dispatchEvent(
+            new CustomEvent("waves:chat-append", {
+              detail: {
+                content: `✅ Tarefa criada${title ? `: ${title}` : ""}${id ? ` (#${id})` : ""}`,
+              },
+            }),
+          );
+        }}
       />
       <Toaster richColors position="top-center" />
     </div>

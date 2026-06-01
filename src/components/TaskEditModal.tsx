@@ -72,7 +72,7 @@ export function TaskEditModal({
 }: {
   taskId: number | null;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (result: { id: number; title: string }) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -160,7 +160,7 @@ export function TaskEditModal({
     setError(null);
     try {
       await updateTask(orig.id, patch);
-      onSaved?.();
+      onSaved?.({ id: orig.id, title: title.trim() || orig.title });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao salvar.");
