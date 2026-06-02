@@ -1723,6 +1723,10 @@ async function handleChatRequestHermes(
                   usage?: {
                     prompt_tokens?: number;
                     completion_tokens?: number;
+                    input_tokens?: number;
+                    output_tokens?: number;
+                    total_tokens?: number;
+                    total?: number;
                   };
                 };
                 try {
@@ -1733,8 +1737,30 @@ async function handleChatRequestHermes(
                 // Bloco de usage (chunk sem choices, vem no fim quando
                 // include_usage). Acumula entre turnos.
                 if (ev.usage) {
-                  usagePrompt += Number(ev.usage.prompt_tokens ?? 0);
-                  usageCompletion += Number(ev.usage.completion_tokens ?? 0);
+                  const prompt = Number(
+                    ev.usage.prompt_tokens ?? ev.usage.input_tokens ?? 0,
+                  );
+                  const completion = Number(
+                    ev.usage.completion_tokens ?? ev.usage.output_tokens ?? 0,
+                  );
+                  const total = Number(
+                    ev.usage.total_tokens ??
+                      ev.usage.total ??
+                      prompt + completion,
+                  );
+
+                  // Alguns provedores só retornam total_tokens no stream final.
+                  // Nesse caso, preserva a divisão conhecida (se houver) e evita
+                  // zerar o badge de tokens.
+                  usagePrompt += Number.isFinite(prompt) ? prompt : 0;
+                  usageCompletion += Number.isFinite(completion) ? completion : 0;
+                  if (
+                    usagePrompt + usageCompletion === 0 &&
+                    Number.isFinite(total) &&
+                    total > 0
+                  ) {
+                    usageCompletion += total;
+                  }
                 }
                 const choice = ev.choices?.[0];
                 if (!choice) continue;
@@ -1883,6 +1909,9 @@ async function handleChatRequestHermes(
           // só pra admin. Vai como content num comentário HTML (o renderer e o
           // parser openui-lang ignoram; o GenUIAssistantMessage tira na exibição).
           if (usagePrompt > 0 || usageCompletion > 0) {
+            console.log(
+              `[chat:usage] thread=${safeThreadId} P:${usagePrompt} C:${usageCompletion} T:${usagePrompt + usageCompletion} (wantUsage=${wantUsage})`,
+            );
             const marker = `\n<!--waves-usage:{"p":${usagePrompt},"c":${usageCompletion},"t":${usagePrompt + usageCompletion}}-->`;
             enqueue(
               encoder.encode(
@@ -1892,6 +1921,10 @@ async function handleChatRequestHermes(
                   choices: [{ index: 0, delta: { content: marker }, finish_reason: null }],
                 })}\n\n`,
               ),
+            );
+          } else if (wantUsage) {
+            console.log(
+              `[chat:usage] thread=${safeThreadId} 0 tok — sem usage (resposta nativa/sem chamada LLM ou gateway não reportou)`,
             );
           }
 

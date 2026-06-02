@@ -80,10 +80,38 @@ function pickIcon(displayText: string): string {
   if (/relatório|report/.test(t)) return "📄";
   return "✨";
 }
+
+/** Mapeia um starter da PLATAFORMA (shape variável) pro ProfileStarter local. */
+function mapPlatformStarter(s: unknown): ProfileStarter | null {
+  if (!s || typeof s !== "object") return null;
+  const o = s as Record<string, unknown>;
+  const display = o.displayText ?? o.title ?? o.label ?? o.text ?? o.name;
+  // Starter sem rótulo (placeholder da plataforma, ex.: Steve hoje) → ignora.
+  if (display == null || String(display).trim() === "") return null;
+  const prompt = o.prompt ?? o.message ?? o.content ?? display;
+  const icon = typeof o.icon === "string" ? o.icon : undefined;
+  return { displayText: String(display), prompt: String(prompt), icon };
+}
+
+/** Starters da plataforma pro profile ativo (login agent.starters, por porta). */
+function platformStartersFor(
+  activeProfile: string,
+  available: ProfileOption[],
+  agents: AgentItem[] | undefined,
+): ProfileStarter[] {
+  const port = available.find((p) => p.id === activeProfile)?.port;
+  if (port == null) return [];
+  const agent = (agents ?? []).find((a) => a.port === port);
+  const raw = agent?.starters;
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  return raw
+    .map(mapPlatformStarter)
+    .filter((x): x is ProfileStarter => x != null);
+}
 import { getEnvironmentLabel } from "../config/env";
 import { personaLabel } from "../lib/permissions";
 import { useTheme } from "../hooks/use-system-theme";
-import type { AuthSession } from "../types/auth";
+import type { AgentItem, AuthSession } from "../types/auth";
 
 interface ChatPageProps {
   session: AuthSession;
@@ -333,7 +361,15 @@ function GenUIAssistantMessage({
 // composer da thread no estado vazio não dispara — ou seja, nosso ChatComposer
 // (único, com botão "+") fica visível tanto na welcome quanto na conversa.
 // Renderizamos título + starters aqui; o input fica no ChatComposer embaixo.
-function WelcomeArea({ starters }: { starters: ProfileStarter[] }) {
+function WelcomeArea({
+  starters,
+  title,
+  subtitle,
+}: {
+  starters: ProfileStarter[];
+  title?: string;
+  subtitle?: string;
+}) {
   const messages = useThread((s) => s.messages);
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
   const processMessage = useThread((s) => s.processMessage);
@@ -343,10 +379,14 @@ function WelcomeArea({ starters }: { starters: ProfileStarter[] }) {
   return (
     <Shell.WelcomeScreen>
       <div className="waves-welcome">
-        <h2 className="waves-welcome__title">Como posso ajudar?</h2>
-        <p className="waves-welcome__desc">
-          Escolha uma opção, digite sua mensagem ou anexe um arquivo no “+”.
-        </p>
+        {/* Título/subtítulo vêm da PLATAFORMA (page_title/page_subtitle).
+            Se vier null/vazio → fica em branco (sem texto de fallback). */}
+        {title?.trim() && (
+          <h2 className="waves-welcome__title">{title.trim()}</h2>
+        )}
+        {subtitle?.trim() && (
+          <p className="waves-welcome__desc">{subtitle.trim()}</p>
+        )}
         {starters.length > 0 && (
           <div className="waves-welcome__starters">
             {starters.map((s, i) => (
@@ -686,10 +726,21 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     [activeProfile],
   );
 
-  // Starters do profile ativo (vêm de /api/runtime?profile=X)
+  // Starters do profile ativo. PREFERÊNCIA: os cadastrados na PLATAFORMA
+  // (login → agent.starters, casados por porta). FALLBACK: os do runtime
+  // (hardcoded no server) enquanto a plataforma não tiver cadastro.
   const [starters, setStarters] = useState<ProfileStarter[]>([]);
   useEffect(() => {
     let cancelled = false;
+    const fromPlatform = platformStartersFor(
+      activeProfile,
+      availableProfiles,
+      session.agents,
+    );
+    if (fromPlatform.length) {
+      setStarters(fromPlatform);
+      return;
+    }
     fetchRuntime(activeProfile).then((r) => {
       if (cancelled) return;
       setStarters(r?.defaultStarters ?? []);
@@ -697,7 +748,20 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeProfile]);
+  }, [activeProfile, availableProfiles, session.agents]);
+
+  // Agente do login casado ao profile ativo (por porta) → page_title/subtitle.
+  const activeAgent = useMemo<AgentItem | undefined>(() => {
+    const port = availableProfiles.find((p) => p.id === activeProfile)?.port;
+    if (port == null) return undefined;
+    return (session.agents ?? []).find((a) => a.port === port);
+  }, [activeProfile, availableProfiles, session.agents]);
+
+  // Título da página (browser tab) vem do agente cadastrado na plataforma.
+  useEffect(() => {
+    const t = activeAgent?.page_title?.trim();
+    document.title = t ? `${t} · Waves` : "Waves";
+  }, [activeAgent]);
 
   const defaultWorkflowId: number | undefined = undefined;
   const persona = userScope?.persona ?? null;
@@ -853,7 +917,14 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
       </header>
 
       <div className={`chat-shell-body${mobileNavOpen ? " nav-open" : ""}`}>
-        <SidebarUserFooter user={session.user} onLogout={onLogout} />
+        {/* key=activeProfile: a sidebar da lib remonta ao trocar profile (o
+            ChatProvider abaixo tem a mesma key). Sem remontar aqui, o footer
+            portalizado ficava preso à sidebar antiga (destruída) e sumia. */}
+        <SidebarUserFooter
+          key={activeProfile}
+          user={session.user}
+          onLogout={onLogout}
+        />
         <ThemeProvider mode={mode}>
           {/* key força remount quando profile muda (adapters/state limpos) */}
           <ChatProvider
@@ -892,7 +963,11 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                 <Shell.SidebarContent />
               </Shell.SidebarContainer>
               <Shell.ThreadContainer>
-                <WelcomeArea starters={starters} />
+                <WelcomeArea
+                  starters={starters}
+                  title={activeAgent?.page_title}
+                  subtitle={activeAgent?.page_subtitle}
+                />
                 <Shell.ScrollArea>
                   <Shell.Messages
                     loader={<ThinkingIndicator />}

@@ -11,6 +11,7 @@ import { FollowUpBlock } from "./components/follow-up-block";
 import { Image, ImageBlock } from "./components/image";
 import { FileDownload } from "./components/file-download";
 import { TaskList } from "./components/task-list";
+import { ProjectOverview } from "./components/project-overview";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { PaginationBlock } from "./components/pagination-block";
 import { Progress } from "./components/progress";
@@ -58,6 +59,7 @@ export const ContentChildUnion = z.union([
   ScatterChartComponent.ref,
   Table.ref,
   TaskList.ref,
+  ProjectOverview.ref,
   TagBlock.ref,
   Form.ref,
   Buttons.ref,

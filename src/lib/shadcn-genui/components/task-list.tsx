@@ -37,9 +37,17 @@ interface Row {
   overdue?: boolean;
 }
 
+/** Lê um campo que pode ser string ("KC Soares") OU objeto ({name: "..."}). */
+function nameOf(v: unknown, fallback?: unknown): string | undefined {
+  if (typeof v === "string" && v.trim()) return v;
+  if (v && typeof v === "object") {
+    const n = (v as Record<string, unknown>).name;
+    if (typeof n === "string" && n.trim()) return n;
+  }
+  return typeof fallback === "string" && fallback.trim() ? fallback : undefined;
+}
+
 function mapRow(t: Record<string, unknown>): Row {
-  const resp = (pick(t, ["responsible"]) as Record<string, unknown>) || {};
-  const stage = (pick(t, ["funnel_stage", "stage"]) as Record<string, unknown>) || {};
   const itemsCount = asNum(pick(t, ["items_count"]));
   const itemsDone = asNum(pick(t, ["items_completed", "items_done"]));
   const due = pick(t, ["due_date", "due_at"]);
@@ -47,10 +55,12 @@ function mapRow(t: Record<string, unknown>): Row {
   return {
     id: asNum(pick(t, ["id"])),
     title: String(pick(t, ["title", "name"]) ?? "(sem título)"),
-    responsibleName:
-      (pick(resp, ["name"]) as string) ?? (pick(t, ["responsible_name"]) as string),
-    stageName:
-      (pick(stage, ["name"]) as string) ?? (pick(t, ["funnel_stage_name", "stage_name"]) as string),
+    // responsible/stage podem vir como STRING (nome) ou objeto {name}.
+    responsibleName: nameOf(pick(t, ["responsible"]), pick(t, ["responsible_name"])),
+    stageName: nameOf(
+      pick(t, ["funnel_stage", "stage"]),
+      pick(t, ["funnel_stage_name", "stage_name"]),
+    ),
     dueDate: fmtDate(due),
     progress:
       itemsCount && itemsCount > 0 && itemsDone != null
@@ -74,18 +84,26 @@ export const TaskList = defineComponent({
     // `data` vem de Query("list_tasks", {...}). z.any() = resultado do runtime.
     data: z.any(),
     title: z.string().optional(),
+    // Filtro CLIENT-SIDE por NOME do responsável (a task expõe o nome, não o id).
+    responsible: z.string().optional(),
   }),
   description:
     "Lista de tasks DATA-DRIVEN (fluxo EXECUTE, sem LLM). Recebe `data` de " +
-    'Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []}) ' +
+    'Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, search?}, {rows: []}) ' +
     "e renderiza a lista (título, responsável, etapa, prazo, progresso) com clique→editar. " +
     "Use SEMPRE este componente para listar/filtrar tasks de um workflow — NÃO chame a tool " +
     "list_tasks você mesmo. Padrão: `t = Query(\"list_tasks\", {workflow_id: 57}, {rows: []})` + " +
-    "`lista = TaskList(t)`. Para filtrar por responsável/etapa, passe o filtro nos args da Query " +
-    "(ex.: {workflow_id: 57, responsible_id: $resp}) — o runtime re-busca sozinho ao mudar.",
+    "`lista = TaskList(t)`. **Filtrar por RESPONSÁVEL:** a task expõe só o NOME (string), não o id — " +
+    "então NÃO use responsible_id na Query (não resolve). Em vez disso busque TODAS as tasks do " +
+    'workflow e passe o nome no 3º arg: `TaskList(t, "Tasks da KC Soares", "KC Soares")` → o ' +
+    "componente filtra por nome client-side. Etapa/busca podem ir na Query (funnel_stage_id/search).",
   component: ({ props }) => {
-    const rows = mapRows(props.data);
+    const all = mapRows(props.data);
     const title = props.title as string | undefined;
+    const filterResp = (props.responsible as string | undefined)?.trim().toLowerCase();
+    const rows = filterResp
+      ? all.filter((r) => (r.responsibleName ?? "").toLowerCase().includes(filterResp))
+      : all;
 
     if (rows.length === 0) {
       return (

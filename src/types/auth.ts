@@ -19,6 +19,12 @@ export type AgentItem = {
   host?: string;
   /** Porta do gateway — usada pra casar o agente com o profile roteável. */
   port?: number;
+  /** Starters da plataforma (botões de conversa). Cada item: {label, prompt, icon}.
+   *  `null` ou array vazio/sem label quando não cadastrado na Waves. */
+  starters?: unknown[] | null;
+  /** Título/subtítulo da página do agente (cadastrados na Waves). */
+  page_title?: string;
+  page_subtitle?: string;
   [key: string]: unknown;
 };
 

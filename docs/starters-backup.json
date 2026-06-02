@@ -1,0 +1,32 @@
+{
+  "_note": "Backup dos starters HARDCODED do waves_client (server/index.ts → PROFILE_STARTERS, por porta). Gerado 2026-06-02 antes de migrar pra os starters da PLATAFORMA (o POST /login devolve agent.starters por agente). Cadastrar estes mesmos na Waves, por agente, pra o chat passar a usar os da plataforma.",
+  "_formato": "cada starter = { displayText (texto do botão), prompt (o que é enviado ao agente ao clicar) }. prompts '__form_cpf__' / '__form_cnpj__' são MARCADORES especiais: o SOUL renderiza o formulário de consulta por tipo de documento (não é texto literal).",
+  "profiles": {
+    "bioshield-steve": {
+      "port": 18860,
+      "agent_login_id": 4,
+      "starters": [
+        { "displayText": "Action Plans abertos", "prompt": "Liste todos os Action Plans abertos hoje, com responsável e estágio. Use dashboard visual." },
+        { "displayText": "Status do projeto", "prompt": "Me dá um overview do BIOSHIELD agora: fase, frentes ativas, próximos marcos." },
+        { "displayText": "Tarefas críticas", "prompt": "Quais são as tasks de maior prioridade ou em atraso nos Action Plans?" },
+        { "displayText": "Funil de captação", "prompt": "Mostra o estado atual do funil de captação e investimento do projeto." }
+      ]
+    },
+    "ybrax-negative-media": {
+      "port": 18862,
+      "agent_login_id": 2,
+      "starters": [
+        { "displayText": "Consultar CNPJ", "prompt": "__form_cnpj__" },
+        { "displayText": "Consultar CPF", "prompt": "__form_cpf__" }
+      ]
+    },
+    "ybrax-verifique": {
+      "port": 18864,
+      "agent_login_id": 1,
+      "starters": [
+        { "displayText": "Consultar CPF", "prompt": "__form_cpf__" },
+        { "displayText": "Consultar CNPJ", "prompt": "__form_cnpj__" }
+      ]
+    }
+  }
+}

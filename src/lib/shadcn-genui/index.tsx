@@ -79,6 +79,7 @@ import { Stack } from "./components/stack";
 import { Kanban, KanbanCard, KanbanColumn } from "./components/kanban";
 import { WorkflowKanban } from "./components/workflow-kanban";
 import { TaskList } from "./components/task-list";
+import { ProjectOverview } from "./components/project-overview";
 
 // Collapsible — bloco único colapsável (não confundir com Accordion, que é
 // lista de seções). Usar para "ver mais", "detalhes", "notas avançadas".
@@ -257,12 +258,13 @@ export const shadcnComponentGroups: ComponentGroup[] = [
     ],
   },
   {
-    name: "Kanban / Lista de tasks (data-driven via Query)",
-    components: ["WorkflowKanban", "TaskList"],
+    name: "Kanban / Lista de tasks / Visão agregada (data-driven via Query)",
+    components: ["WorkflowKanban", "TaskList", "ProjectOverview"],
     notes: [
       '- 🔑 KANBAN de workflow: SEMPRE `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca; o componente monta colunas/cards/drag/edição/"+ Nova".',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
-      "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
+      '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
+      "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks/statistics) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
       "- workflow_id: use o do contexto (AP/kanban mencionado). Se não souber, pergunte 1 linha.",
       '- `KanbanColumn(name, color?, count?, cards=[...], stageId?)` — uma coluna com header. color: hex (#dc3545) → borda colorida do header. count: número de cards (mostrado como badge). **stageId = funnel_stage_id da etapa** — inclua SEMPRE (vem depois de cards) pra habilitar arrastar cards entre colunas (drag-and-drop move a task pra etapa onde foi solta). Mapeie de stage.id do kanban.',
       '- `KanbanCard(title, badges?, progress?, responsibleName?, responsibleAvatar?, tags?, id?, expandable?)` — card de uma task. badges: lista curta de strings (ex.: ["15d 6h"]). progress: 0-100 (vira barra). tags: chips coloridos. expandable: array de componentes que aparece embaixo do card quando o user clica (útil pra descrição, checklist, histórico, comentários).',
@@ -496,6 +498,7 @@ export const shadcnChatLibrary = createLibrary({
     KanbanCard,
     WorkflowKanban,
     TaskList,
+    ProjectOverview,
     // Collapsible (bloco único colapsável)
     Collapsible,
     // List/ListItem (lista vertical com marcadores)

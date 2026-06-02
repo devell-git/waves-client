@@ -93,23 +93,19 @@ export function UserMessageView({ message }: UserMessageViewProps) {
 
   return (
     <div className="openui-shell-thread-message-user">
-      <div className="openui-shell-thread-message-user__content">
-        {attachments.length > 0 && (
-          <div className="waves-msg-attachments">
-            {attachments.map((p, i) => (
-              <AttachmentItem key={`${p.url}-${i}`} part={p} />
-            ))}
-          </div>
-        )}
-        {text && <div className="waves-msg-text">{text}</div>}
-        <div
-          style={{
-            fontSize: "0.7rem",
-            opacity: 0.5,
-            marginTop: "0.2rem",
-            textAlign: "right",
-          }}
-        >
+      <div className="waves-user-msg-col">
+        <div className="openui-shell-thread-message-user__content">
+          {attachments.length > 0 && (
+            <div className="waves-msg-attachments">
+              {attachments.map((p, i) => (
+                <AttachmentItem key={`${p.url}-${i}`} part={p} />
+              ))}
+            </div>
+          )}
+          {text && <div className="waves-msg-text">{text}</div>}
+        </div>
+        {/* Horário FORA da bolha (abaixo), igual ao meta do agente — padroniza. */}
+        <div className="waves-msg-meta waves-msg-meta--user">
           {fmtTime(messageTime(message.id, message.timestamp))}
         </div>
       </div>

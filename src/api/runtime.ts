@@ -12,6 +12,8 @@ export interface ProfileStarterFormField {
 export interface ProfileStarter {
   displayText: string;
   prompt: string;
+  /** Ícone (Tabler, ex.: "ti-cash") vindo da plataforma. Opcional. */
+  icon?: string;
   /** Quando presente, click abre form local em vez de mandar prompt direto. */
   formFields?: ProfileStarterFormField[];
   /** Template aplicado após submit do form. `{{name}}` → valor. */

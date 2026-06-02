@@ -237,12 +237,25 @@ body {
   border-radius: 0.375rem;
   padding: 0.7rem 0.85rem;
   font: inherit;
-  color: var(--text);
+  /* Texto ESCURO fixo: o input é sempre branco, então não pode usar var(--text)
+     (que vira branco no dark mode → texto invisível em fundo branco). */
+  color: #111827;
+  -webkit-text-fill-color: #111827;
   background: #fff;
 }
 
 .field input::placeholder {
   color: #9ca3af;
+  -webkit-text-fill-color: #9ca3af;
+}
+
+/* Autofill do browser não pode pintar o texto de claro nem o fundo de escuro. */
+.field input:-webkit-autofill,
+.field input:-webkit-autofill:hover,
+.field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  caret-color: #111827;
 }
 
 .field input:focus {
@@ -2211,6 +2224,15 @@ a {
 /* A lib aplica min-height ~100dvh no último filho de .thread-messages (scroll
    anchor). Com Renderer + rodapé em fragmentos separados, só o meta virava
    :last-child e ficava no fim da área vazia. Um wrapper por mensagem resolve. */
+
+/* O wrapper herda min-height ~100dvh da última msg (scroll anchor). Sem isto,
+   o __content (flex item) ESTICA na vertical (align-items: stretch padrão) e
+   empurra o rodapé (hora + tokens) pro fim do espaço vazio. flex-start mantém
+   o content no tamanho natural → meta colado logo abaixo da mensagem. */
+.waves-assistant-message {
+  align-items: flex-start;
+}
+
 .waves-assistant-message__meta {
   display: flex;
   flex-wrap: wrap;
@@ -2220,6 +2242,28 @@ a {
   opacity: 0.5;
   margin-top: 0.35rem;
   padding: 0;
+}
+
+/* Horário do USUÁRIO padronizado com o do agente: FORA da bolha (abaixo),
+   à direita. A coluna empilha bolha + meta dentro do wrapper flex-end. */
+.waves-user-msg-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 100%;
+}
+.waves-msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.7rem;
+  opacity: 0.5;
+  margin-top: 0.35rem;
+}
+.waves-msg-meta--user {
+  justify-content: flex-end;
+  padding-right: 0.25rem;
 }
 
 /* ─── Anexos renderizados na bolha do usuário (UserMessageView) ────────── */
