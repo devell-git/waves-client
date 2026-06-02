@@ -92,8 +92,18 @@ implementa.
 
 ---
 
+## Aprendizados / decisões
+- **Skills = +1 turno LLM cada.** A resposta "compare APs" invocava 5 skills →
+  98s/193k. **Proibir no prompt** as skills de dados derrubou pra 11s/34k.
+- **Bloquear skill no plugin NÃO funciona:** o agente flaila quando negado
+  (tenta outros caminhos → +turnos → PIOR, 30s→35s). Ficou só a proibição de
+  prompt. Resíduo: o `list_wf` ainda consulta `listar` às vezes (aceitável).
+- **`get_workflow` NÃO é truncado** (só list_workflows/kanban/tasks) — fidelidade
+  de metadados > economia; o agente pode precisar do template/funil do AP.
+
 ## Pendências (próximos alvos de economia)
-- [ ] Proibir no prompt as skills `waves-task-counting` / `visao-de-progresso` no
+- [x] ~~Proibir skills de dados no prompt~~ — feito (98s→11s).
+- [ ] Skill `waves-task-counting` / `visao-de-progresso` residual no
       waves_client (o runtime já cobre) — ainda são chamadas (6–9k cada).
 - [ ] Avaliar remover/desligar 1 dos 2 MCPs Waves duplicados (`bioshield` vs
       `waves-openui`) — risco: SOUL/Telegram referenciam.
