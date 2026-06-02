@@ -17,7 +17,7 @@ import { Renderer } from "@openuidev/react-lang";
 // Library custom shadcn-genui (36 componentes ricos baseados em shadcn/ui)
 // substitui o openuiChatLibrary built-in pra ter UI mais polida no chat.
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { UserMessageView } from "./UserMessageView";
 import type { UploadedFile } from "../api/uploads";
@@ -154,6 +154,26 @@ function CreateTaskTrigger({
   );
 }
 
+// Container único por mensagem assistant (alinha ao shell padrão). Sem isto,
+// Renderer + MessageMeta viram dois filhos diretos da lista — o rodapé vira o
+// :last-child e herda min-height ~100dvh do scroll-anchor da lib OpenUI.
+function AssistantMessageShell({
+  children,
+  meta,
+}: {
+  children: ReactNode;
+  meta?: ReactNode;
+}) {
+  return (
+    <div className="openui-shell-thread-message-assistant openui-shell-thread-message-assistant--without-logo waves-assistant-message">
+      <div className="openui-shell-thread-message-assistant__content">
+        {children}
+        {meta}
+      </div>
+    </div>
+  );
+}
+
 // Rodapé de cada mensagem: horário + (admin) tokens da geração. Mensagem
 // nativa (sem chamada LLM) não tem usage → mostra "0 tok".
 function MessageMeta({
@@ -166,16 +186,7 @@ function MessageMeta({
   usage: ReturnType<typeof extractUsage>["usage"];
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: "0.5rem",
-        alignItems: "center",
-        fontSize: "0.7rem",
-        opacity: 0.5,
-        padding: "0.1rem 1rem 0.35rem",
-      }}
-    >
+    <div className="waves-assistant-message__meta">
       <span>{fmtTime(messageTime(id, timestamp))}</span>
       {isAdmin() && (
         <span title="Tokens da geração (P=prompt, C=completion)">
@@ -202,7 +213,13 @@ function GenUIAssistantMessage({
 
   // Diretiva de criação de tarefa → abre o modal nativo automaticamente.
   const createDir = parseCreateTaskDirective(content);
-  if (createDir) return <CreateTaskTrigger directive={createDir} />;
+  if (createDir) {
+    return (
+      <AssistantMessageShell meta={meta}>
+        <CreateTaskTrigger directive={createDir} />
+      </AssistantMessageShell>
+    );
+  }
 
   // Job em background (Relatório MAP / Mídias Negativas): o agente emite um
   // `check_job: "<id>"`. Em vez de mostrar o texto cru, renderizamos um card
@@ -210,23 +227,25 @@ function GenUIAssistantMessage({
   const job = parseCheckJob(content);
   if (job) {
     return (
-      <JobProgressCard
-        jobId={job.jobId}
-        etaSeconds={job.etaSeconds}
-        onActionContent={(label, formState) => {
-          const contentPart = label ? `<content>${label}</content>` : "";
-          const ctx: unknown[] = [`User clicked: ${label ?? ""}`];
-          if (formState) ctx.push(formState);
-          processMessage({ role: "user", content: `${contentPart}<context>${JSON.stringify(ctx)}</context>` });
-        }}
-      />
+      <AssistantMessageShell meta={meta}>
+        <JobProgressCard
+          jobId={job.jobId}
+          etaSeconds={job.etaSeconds}
+          onActionContent={(label, formState) => {
+            const contentPart = label ? `<content>${label}</content>` : "";
+            const ctx: unknown[] = [`User clicked: ${label ?? ""}`];
+            if (formState) ctx.push(formState);
+            processMessage({ role: "user", content: `${contentPart}<context>${JSON.stringify(ctx)}</context>` });
+          }}
+        />
+      </AssistantMessageShell>
     );
   }
 
   // Texto puro (sem construções openui-lang) → bolha de chat simples
   if (!OPENUI_PATTERN.test(content)) {
     return (
-      <>
+      <AssistantMessageShell meta={meta}>
         <div className="assistant-plain-text" style={{
           padding: "0.75rem 1rem",
           whiteSpace: "pre-wrap",
@@ -234,13 +253,12 @@ function GenUIAssistantMessage({
         }}>
           {content}
         </div>
-        {meta}
-      </>
+      </AssistantMessageShell>
     );
   }
 
   return (
-    <>
+    <AssistantMessageShell meta={meta}>
     <Renderer
       response={content}
       library={shadcnChatLibrary}
@@ -302,8 +320,7 @@ function GenUIAssistantMessage({
         }
       }}
     />
-    {meta}
-    </>
+    </AssistantMessageShell>
   );
 }
 
@@ -544,7 +561,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   const [registry, setRegistry] = useState<RegistryProfile[]>([]);
   useEffect(() => {
     let alive = true;
-    fetch("/api/profiles")
+    // no-store: todo (re)load — inclusive hard reload — refaz a busca dos
+    // profiles direto no servidor, sem servir cache antigo do browser.
+    fetch("/api/profiles", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (alive && Array.isArray(d?.profiles)) setRegistry(d.profiles);
@@ -569,25 +588,33 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     loadActiveProfileId(),
   );
 
-  // Thread atual (conversa). Persistida por profile em localStorage.
+  // Tenant da sessão (resolvido por host no login). Vincula as threads pra não
+  // misturar conversas de tenants diferentes com o mesmo user-id — tanto no
+  // ponteiro em localStorage quanto na key da sessão do gateway.
+  const tenantId = session.tenant || "default";
+  const lsThreadKey = (profile: string) => `waves-thread-${tenantId}-${profile}`;
+  const threadKeyPrefix = `waves-${tenantId}-user-${session.user.id}::`;
+
+  // Thread atual (conversa). Persistida por (tenant, profile) em localStorage.
   const [activeThreadId, setActiveThreadId] = useState<string>(() => {
     if (typeof window === "undefined") return newThreadId();
-    const stored = window.localStorage.getItem(`waves-thread-${loadActiveProfileId()}`);
+    const stored = window.localStorage.getItem(lsThreadKey(loadActiveProfileId()));
     return stored || newThreadId();
   });
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(`waves-thread-${activeProfile}`, activeThreadId);
+      window.localStorage.setItem(lsThreadKey(activeProfile), activeThreadId);
     }
-  }, [activeProfile, activeThreadId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile, activeThreadId, tenantId]);
 
   const handleProfileChange = (id: string) => {
     if (id === activeProfile) return;
     setActiveProfile(id);
     saveActiveProfileId(id);
     if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem(`waves-thread-${id}`);
+      const stored = window.localStorage.getItem(lsThreadKey(id));
       setActiveThreadId(stored || newThreadId());
     }
   };
@@ -688,7 +715,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
 
         // Guarda a requisição exata (follow-up, composer, etc.) para retomar após
         // queda de rede — ThreadErrorRecovery lê e chama processMessage de novo.
-        const threadKey = `waves-user-${session.user.id}::${activeThreadId}`;
+        const threadKey = `${threadKeyPrefix}${activeThreadId}`;
         const lastMsg = messages[messages.length - 1];
         if (lastMsg?.role === "user" && lastMsg.content != null) {
           const raw =
@@ -777,7 +804,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     onLogout();
   }, [onLogout]);
 
-  const fullThreadKey = `waves-user-${session.user.id}::${activeThreadId}`;
+  const fullThreadKey = `${threadKeyPrefix}${activeThreadId}`;
 
   return (
     <div className="chat-shell">
@@ -860,7 +887,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                   onNewChat={() => { handleNewChat(); setMobileNavOpen(false); }}
                   onSelectThread={(k) => { handleSelectThread(k); setMobileNavOpen(false); }}
                   activeThreadId={activeThreadId}
-                  threadKeyPrefix={`waves-user-${session.user.id}::`}
+                  threadKeyPrefix={threadKeyPrefix}
                 />
                 <Shell.SidebarContent />
               </Shell.SidebarContainer>

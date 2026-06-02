@@ -14,6 +14,7 @@
 import Database from "better-sqlite3";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
+import { getActiveTenant } from "./tenants.js";
 
 const HERMES_HOME = resolve(homedir(), ".hermes");
 
@@ -66,10 +67,17 @@ export interface SearchHit {
 }
 
 /**
- * Filtra sessões que pertencem a um "usuário do waves_client".
- * Inclui: `waves-user-*`, `waves-anon*`. Exclui sessões api/cron/manuais.
+ * Filtra sessões que pertencem a um "usuário do waves_client" DO TENANT ATUAL
+ * (resolvido por host via ALS). Inclui `waves-<tenant>-user-*` e
+ * `waves-<tenant>-anon*`; exclui api/cron/manuais e os OUTROS tenants.
+ *
+ * Threads pré-tenant (formato legado `waves-user-*`) não aparecem mais — não
+ * são apagadas, só ficam fora do namespace do tenant.
  */
-const USER_SESSION_PATTERN = "(id LIKE 'waves-user-%' OR id LIKE 'waves-anon%')";
+function userSessionPattern(col = "id"): string {
+  const t = getActiveTenant().id.replace(/[^a-z0-9_-]/gi, "");
+  return `(${col} LIKE 'waves-${t}-user-%' OR ${col} LIKE 'waves-${t}-anon%')`;
+}
 
 export function listThreads(profileId: string, limit = 100): ThreadSummary[] {
   const db = getDb(profileId);
@@ -90,7 +98,7 @@ export function listThreads(profileId: string, limit = 100): ThreadSummary[] {
           LIMIT 1
         )               AS firstUserMsg
       FROM sessions s
-      WHERE ${USER_SESSION_PATTERN} AND s.message_count > 0
+      WHERE ${userSessionPattern()} AND s.message_count > 0
       ORDER BY COALESCE((SELECT MAX(timestamp) FROM messages WHERE session_id = s.id), s.started_at) DESC
       LIMIT ?
     `,
@@ -166,7 +174,7 @@ export function searchThreads(profileId: string, query: string, limit = 50): Sea
       JOIN messages m ON m.id = messages_fts.rowid
       JOIN sessions s ON s.id = m.session_id
       WHERE messages_fts MATCH ?
-        AND ${USER_SESSION_PATTERN.replace(/\bid\b/g, "s.id")}
+        AND ${userSessionPattern("s.id")}
       ORDER BY m.timestamp DESC
       LIMIT ?
     `,

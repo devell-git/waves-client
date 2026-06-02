@@ -6,6 +6,8 @@
  * esse retorno pra montar o contexto que vai junto da mensagem.
  */
 
+import { loadSession } from "../lib/session";
+
 export type UploadKind = "pdf" | "doc" | "sheet" | "text" | "image" | "other";
 
 export interface UploadedFile {
@@ -33,7 +35,12 @@ export async function uploadFiles(files: File[]): Promise<UploadedFile[]> {
   const form = new FormData();
   for (const f of files) form.append("files", f, f.name);
 
-  const res = await fetch("/api/uploads", { method: "POST", body: form });
+  // Bearer do usuário — o servidor vincula o upload ao tenant (host) + usuário.
+  const token = loadSession()?.accessToken;
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch("/api/uploads", { method: "POST", body: form, headers });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {

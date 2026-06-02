@@ -19,7 +19,13 @@
 import { Router } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as XLSX from "xlsx";
@@ -27,9 +33,35 @@ import mammoth from "mammoth";
 // Importa o módulo interno — o entrypoint `pdf-parse` roda código de debug
 // (lê um PDF de teste) quando `module.parent` é undefined, o que quebra em ESM.
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { getActiveTenant } from "./tenants.js";
+import { getWavesUser, type WavesSession } from "./waves-client.js";
+import { signUpload, verifyUpload } from "./signed-url.js";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const UPLOAD_DIR = resolve(rootDir, "uploads");
+
+/** Sanitiza um segmento (tenant/owner) pra uso seguro em path. */
+function seg(v: string | number): string {
+  return String(v).replace(/[^a-z0-9_-]/gi, "").slice(0, 64) || "_";
+}
+
+/** Extrai o Bearer do header Authorization. */
+function bearerOf(req: { headers: Record<string, unknown> }): string | null {
+  const h = req.headers["authorization"];
+  if (typeof h !== "string") return null;
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+interface UploadMeta {
+  tenant: string;
+  owner: number;
+  filename: string;
+  mimeType: string;
+  kind: string;
+  size: number;
+  createdAt: number;
+}
 
 /** Limite por texto extraído injetado no prompt (caracteres). */
 const MAX_TEXT_CHARS = 20_000;
@@ -135,6 +167,19 @@ export interface UploadedFileMeta {
 export const uploadsRouter = Router();
 
 uploadsRouter.post("/", upload.array("files", MAX_FILES), async (req, res) => {
+  // Auth obrigatória: o upload é vinculado ao TENANT (host/ALS) + USUÁRIO (token).
+  const token = bearerOf(req);
+  if (!token) return res.status(401).json({ error: "Autenticação necessária." });
+  const tenant = getActiveTenant().id;
+  let owner: number;
+  try {
+    const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
+    const user = await getWavesUser({ environment: env, accessToken: token });
+    owner = user.id;
+  } catch {
+    return res.status(401).json({ error: "Token Babble inválido." });
+  }
+
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (!files.length) {
     return res.status(400).json({ error: "Nenhum arquivo enviado (campo 'files')." });
@@ -143,7 +188,8 @@ uploadsRouter.post("/", upload.array("files", MAX_FILES), async (req, res) => {
   const out: UploadedFileMeta[] = [];
   for (const f of files) {
     const id = randomUUID();
-    const dir = resolve(UPLOAD_DIR, id);
+    // uploads/<tenant>/<owner>/<uuid>/ — separação física por tenant+usuário.
+    const dir = resolve(UPLOAD_DIR, seg(tenant), seg(owner), id);
     mkdirSync(dir, { recursive: true });
     const safe = sanitize(f.originalname);
     const fullPath = resolve(dir, safe);
@@ -153,13 +199,26 @@ uploadsRouter.post("/", upload.array("files", MAX_FILES), async (req, res) => {
     const kind = classify(f.mimetype || "", ext);
     const { text, truncated, error } = await extractText(f.buffer, kind);
 
+    const meta: UploadMeta = {
+      tenant,
+      owner,
+      filename: safe,
+      mimeType: f.mimetype || "application/octet-stream",
+      kind,
+      size: f.size,
+      createdAt: Date.now(),
+    };
+    writeFileSync(resolve(dir, "meta.json"), JSON.stringify(meta));
+
+    // URL assinada (inforjável, sem header) — owner na query, tenant via host.
+    const sig = signUpload(id, tenant, owner);
     out.push({
       id,
       filename: f.originalname,
       mimeType: f.mimetype || "application/octet-stream",
       size: f.size,
       kind,
-      url: `/api/uploads/${id}`,
+      url: `/api/uploads/${id}?o=${owner}&s=${sig}`,
       path: fullPath,
       text,
       truncated,
@@ -175,9 +234,40 @@ uploadsRouter.get("/:id", (req, res) => {
   if (!/^[a-f0-9-]{36}$/i.test(id)) {
     return res.status(400).json({ error: "id inválido" });
   }
-  const dir = resolve(UPLOAD_DIR, id);
-  if (!existsSync(dir)) return res.status(404).json({ error: "não encontrado" });
-  const entries = readdirSync(dir);
-  if (!entries.length) return res.status(404).json({ error: "vazio" });
-  return res.sendFile(resolve(dir, entries[0]));
+
+  const owner = String(req.query.o ?? "");
+  const sig = String(req.query.s ?? "");
+
+  // Caminho seguro: URL assinada (tenant via host/ALS + owner na query).
+  if (owner && sig) {
+    const tenant = getActiveTenant().id;
+    if (!verifyUpload(id, tenant, owner, sig)) {
+      return res.status(403).json({ error: "Assinatura inválida." });
+    }
+    const dir = resolve(UPLOAD_DIR, seg(tenant), seg(owner), id);
+    // Confere que o resolved fica DENTRO de UPLOAD_DIR (anti path-traversal).
+    if (!dir.startsWith(UPLOAD_DIR + "/") || !existsSync(dir)) {
+      return res.status(404).json({ error: "não encontrado" });
+    }
+    const meta = (() => {
+      try {
+        return JSON.parse(readFileSync(resolve(dir, "meta.json"), "utf-8")) as UploadMeta;
+      } catch {
+        return null;
+      }
+    })();
+    const file = meta?.filename ?? readdirSync(dir).find((e) => e !== "meta.json");
+    if (!file) return res.status(404).json({ error: "vazio" });
+    res.setHeader("Cache-Control", "private, max-age=86400");
+    return res.sendFile(resolve(dir, file));
+  }
+
+  // Fallback LEGADO: uploads flat antigos (pré-separação, sem assinatura).
+  // Mantém preview de mensagens antigas funcionando; recomendado limpar.
+  const legacyDir = resolve(UPLOAD_DIR, id);
+  if (legacyDir.startsWith(UPLOAD_DIR + "/") && existsSync(legacyDir)) {
+    const entries = readdirSync(legacyDir).filter((e) => e !== "meta.json");
+    if (entries.length) return res.sendFile(resolve(legacyDir, entries[0]));
+  }
+  return res.status(403).json({ error: "Assinatura necessária." });
 });

@@ -2207,6 +2207,21 @@ a {
   cursor: not-allowed;
 }
 
+/* ─── Mensagem assistant (GenUI) — meta colado ao card ─────────────────── */
+/* A lib aplica min-height ~100dvh no último filho de .thread-messages (scroll
+   anchor). Com Renderer + rodapé em fragmentos separados, só o meta virava
+   :last-child e ficava no fim da área vazia. Um wrapper por mensagem resolve. */
+.waves-assistant-message__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.7rem;
+  opacity: 0.5;
+  margin-top: 0.35rem;
+  padding: 0;
+}
+
 /* ─── Anexos renderizados na bolha do usuário (UserMessageView) ────────── */
 .waves-msg-attachments {
   display: flex;

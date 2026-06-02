@@ -1,0 +1,22 @@
+{
+  "tenants": [
+    {
+      "tenant": "empresa-a",
+      "hosts": ["app.empresa-a.com", "empresa-a.waves.app"],
+      "api_url": "https://api.empresa-a.com",
+      "api_key": "bbbl_xxx",
+      "logo_white": "https://cdn.exemplo.com/empresa-a/logo-white.png",
+      "logo_dark": "https://cdn.exemplo.com/empresa-a/logo-dark.png",
+      "img_login": "https://cdn.exemplo.com/empresa-a/login-bg.jpg"
+    },
+    {
+      "tenant": "empresa-b",
+      "hosts": ["app.empresa-b.com"],
+      "api_url": "https://api.empresa-b.com",
+      "api_key": "bbbl_yyy",
+      "logo_white": "https://cdn.exemplo.com/empresa-b/logo-white.png",
+      "logo_dark": "https://cdn.exemplo.com/empresa-b/logo-dark.png",
+      "img_login": "https://cdn.exemplo.com/empresa-b/login-bg.jpg"
+    }
+  ]
+}

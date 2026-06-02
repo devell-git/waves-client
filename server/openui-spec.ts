@@ -14,6 +14,7 @@
  * Spec é pública (sem auth). Tools individuais exigem Bearer.
  */
 import "dotenv/config";
+import { getTenantUrl, getTenantKey } from "./tenants.js";
 
 const OPENUI_SPEC_PATH = "/openui/spec";
 const SPEC_CACHE_TTL_MS = 5 * 60 * 1000; // 5min
@@ -52,19 +53,11 @@ interface SpecCache {
 let _specCache: SpecCache | null = null;
 
 function getWavesUrl(): string {
-  const u =
-    process.env.WAVES_URL?.trim() ??
-    process.env.WAVES_PROD_URL?.trim() ??
-    "https://waves.devell.com.br/api";
-  return u.replace(/\/+$/, "");
+  return getTenantUrl();
 }
 
 function getWavesApiKey(): string {
-  return (
-    process.env.WAVES_TOKEN?.trim() ??
-    process.env.WAVES_PROD_TOKEN?.trim() ??
-    ""
-  );
+  return getTenantKey();
 }
 
 export async function loadOpenUISpec(force = false): Promise<OpenUISpec> {

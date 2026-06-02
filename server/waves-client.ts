@@ -4,6 +4,7 @@ import {
   buildWorkflowsListResult,
   extractWorkflowPagination,
 } from "../shared/workflows-list.js";
+import { getActiveTenant } from "./tenants.js";
 
 export type WavesEnvironment = "dev" | "prod";
 
@@ -18,15 +19,8 @@ interface EnvConfig {
 }
 
 function getEnvConfig(): EnvConfig {
-  const url =
-    process.env.WAVES_URL?.trim() ??
-    process.env.WAVES_PROD_URL?.trim() ??
-    "";
-  const token =
-    process.env.WAVES_TOKEN?.trim() ??
-    process.env.WAVES_PROD_TOKEN?.trim() ??
-    "";
-  return { url, token };
+  const tenant = getActiveTenant();
+  return { url: tenant.url, token: tenant.key };
 }
 
 async function wavesFetch(

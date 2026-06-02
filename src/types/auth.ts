@@ -43,6 +43,8 @@ export interface AuthSession {
   effectivePermissions: string[];
   permissionsVersion?: string;
   agents: AgentItem[];
+  /** Tenant (resolvido por host) ao qual a sessão pertence. Vincula threads. */
+  tenant?: string;
 }
 
 export type WorkflowItem = {

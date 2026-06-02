@@ -39,6 +39,7 @@ import {
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getWavesUser, type WavesSession } from "./waves-client.js";
+import { getActiveTenant } from "./tenants.js";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FILES_DIR = resolve(rootDir, "agent-files");
@@ -47,6 +48,9 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 interface FileMeta {
   owner: number | null; // id do usuário Waves dono; null = público (não-sensível)
+  /** Tenant dono (quando criado via waves_client). Ausente em arquivos da skill
+   *  Hermes, que não conhece o tenant — aí cai no check só-por-owner. */
+  tenant?: string;
   filename: string;
   mimeType: string;
   createdAt: number;
@@ -87,6 +91,7 @@ export function registerFile(args: {
   filename: string;
   mimeType: string;
   owner: number | null;
+  tenant?: string;
 }): { id: string; filename: string } {
   const id = randomUUID();
   const dir = resolve(FILES_DIR, id);
@@ -95,6 +100,7 @@ export function registerFile(args: {
   writeFileSync(resolve(dir, safe), args.buffer);
   const meta: FileMeta = {
     owner: args.owner,
+    tenant: args.tenant,
     filename: safe,
     mimeType: args.mimeType || "application/octet-stream",
     createdAt: Date.now(),
@@ -140,6 +146,7 @@ filesRouter.post("/", upload.single("file"), async (req, res) => {
     filename: f.originalname,
     mimeType: f.mimetype,
     owner,
+    tenant: getActiveTenant().id,
   });
   res.json({ id, filename, url: `/api/files/${id}` });
 });
@@ -152,6 +159,13 @@ filesRouter.get("/:id", async (req, res) => {
   }
   const meta = readMeta(dir);
   if (!meta) return res.status(404).json({ error: "Metadados ausentes." });
+
+  // Isolamento por tenant: se o arquivo tem tenant gravado, o request precisa
+  // chegar pelo mesmo tenant (host/ALS). Arquivos da skill Hermes (sem tenant)
+  // pulam esse check e caem só no de owner abaixo.
+  if (meta.tenant && meta.tenant !== getActiveTenant().id) {
+    return res.status(403).json({ error: "Sem permissão para este arquivo." });
+  }
 
   // Controle de acesso: se o arquivo tem dono, exige token válido do dono.
   if (meta.owner != null) {

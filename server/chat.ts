@@ -40,6 +40,7 @@ import {
   buildOpenAIToolsFromSpec,
   loadOpenUISpec,
 } from "./openui-spec.js";
+import { getActiveTenant } from "./tenants.js";
 import { buildDynamicExamples } from "./dynamic-examples.js";
 import { getDemoReport } from "./demo-reports.js";
 import {
@@ -721,7 +722,11 @@ function buildScopeContext(body: ChatRequestBody): string {
       }
     } else {
       lines.push("");
-      lines.push("**Workflows visíveis:** 0 (user não tem nenhum)");
+      lines.push(
+        "**Workflows:** inventário NÃO pré-carregado no login (otimização). " +
+          "NÃO afirme que o usuário tem 0 — use `list_workflows` (ou Query no " +
+          "runtime) pra listar quando precisar.",
+      );
     }
 
     // Assistants
@@ -738,7 +743,11 @@ function buildScopeContext(body: ChatRequestBody): string {
       }
     } else {
       lines.push("");
-      lines.push("**Assistentes visíveis:** 0 (user não tem nenhum)");
+      lines.push(
+        "**Assistentes:** inventário NÃO pré-carregado no login (otimização). " +
+          "NÃO afirme que o usuário tem 0 — use `list_assistants` pra listar " +
+          "quando precisar.",
+      );
     }
 
     // Bookings
@@ -753,6 +762,12 @@ function buildScopeContext(body: ChatRequestBody): string {
       if (scope.bookings.length > max) {
         lines.push(`- … (+${scope.bookings.length - max} agendas não listadas)`);
       }
+    } else {
+      lines.push("");
+      lines.push(
+        "**Agendas:** inventário NÃO pré-carregado no login (otimização). " +
+          "NÃO afirme que o usuário tem 0 — busque sob demanda quando precisar.",
+      );
     }
 
     // Funnels (1 por assistant; lista nome + stages slim no contexto)
@@ -780,6 +795,13 @@ function buildScopeContext(body: ChatRequestBody): string {
       if (scope.funnels.length > max) {
         lines.push(`- … (+${scope.funnels.length - max} funis não listados)`);
       }
+    } else {
+      lines.push("");
+      lines.push(
+        "**Funis/estágios:** NÃO pré-carregados no login. NÃO afirme que o " +
+          "usuário tem 0 — o estágio de cada AP vem de `get_workflow_kanban` / " +
+          "`list_tasks` (ou Query no runtime), não do scope.",
+      );
     }
   }
 
@@ -1476,7 +1498,11 @@ async function handleChatRequestHermes(
   // 116 mensagens/142k tokens, disparando Preflight compression em toda
   // request e adicionando 9-120s de latência. Detectamos esses casos e
   // geramos um UUID por-request pra forçar isolamento.
-  const userPrefix = user?.id != null ? `waves-user-${user.id}` : "waves-anon";
+  // Vincula a sessão ao TENANT (resolvido por host via ALS) — assim o mesmo
+  // user-id em tenants diferentes não compartilha sessão/histórico no gateway.
+  const tenantId = getActiveTenant().id;
+  const userPrefix =
+    user?.id != null ? `waves-${tenantId}-user-${user.id}` : `waves-${tenantId}-anon`;
   const SHARED_BUCKETS = new Set(["", "ephemeral", "default", "shared", "main"]);
   let safeThreadId = threadId;
   if (!safeThreadId || SHARED_BUCKETS.has(safeThreadId.trim().toLowerCase())) {

@@ -41,7 +41,7 @@ export function clearSession(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-export function createSession(login: LoginResult): AuthSession {
+export function createSession(login: LoginResult, tenant?: string): AuthSession {
   const marginMs = 60_000;
   return normalizeSession({
     environment: WAVES_ENVIRONMENT,
@@ -52,5 +52,6 @@ export function createSession(login: LoginResult): AuthSession {
     effectivePermissions: login.effectivePermissions,
     permissionsVersion: login.permissionsVersion,
     agents: login.agents,
+    tenant: tenant?.trim() || undefined,
   });
 }

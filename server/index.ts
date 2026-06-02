@@ -14,6 +14,13 @@ import {
 import { handleChatRequest } from "./chat.js";
 import { listProfiles } from "./profile-routing.js";
 import {
+  getActiveTenant,
+  getDefaultTenant,
+  getTenantBranding,
+  resolveTenantByHost,
+  runWithTenant,
+} from "./tenants.js";
+import {
   deleteThread,
   getThreadMessages,
   listThreads,
@@ -34,6 +41,23 @@ const DIST_DIR = resolve(ROOT_DIR, "dist");
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
+
+// Resolve o tenant pela ORIGEM da requisição (Host) e fixa no contexto (ALS)
+// pra todo o request. Sem match → tenant default. Assim os consumidores
+// (proxy /api/waves, openui-spec, waves-client) usam url/key/branding certos
+// sem precisar passar o host adiante.
+app.use((req, _res, next) => {
+  const host = (req.headers["x-forwarded-host"] as string) || req.headers.host;
+  const tenant = resolveTenantByHost(host) ?? getDefaultTenant();
+  runWithTenant(tenant, () => next());
+});
+
+// Branding do tenant da origem atual (logos + imagem de login). Público — o
+// frontend (tela de login) consome antes de autenticar.
+app.get("/api/tenant", (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(getTenantBranding());
+});
 
 app.get("/api/health", (_req, res) => {
   const provider = getOpenAiProvider();
@@ -62,24 +86,22 @@ app.get("/api/health", (_req, res) => {
 
 // --- Proxy reverso pra Babble API ------------------------------------------
 // Frontend bate em `/api/waves/<path>` (mesma origem, sem CORS) e nós
-// refazemos pra `https://waves.devell.com.br/api/<path>` server-side,
-// injetando o X-API-KEY (tenant) do .env. Authorization Bearer do user
-// passa direto.
-
-const WAVES_UPSTREAM = (
-  process.env.WAVES_URL ?? "https://waves.devell.com.br/api"
-).replace(/\/+$/, "");
-const WAVES_API_KEY = process.env.WAVES_TOKEN ?? "";
+// refazemos pra `<url do tenant ativo>/<path>` server-side, injetando o
+// X-API-KEY do tenant (resolvido via ACTIVE_TENANT + tenants.json).
+// Authorization Bearer do user passa direto.
 
 app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
-  if (!WAVES_API_KEY) {
-    return res.status(500).json({ error: "WAVES_TOKEN não configurado no .env." });
+  const tenant = getActiveTenant();
+  if (!tenant.key || !tenant.url) {
+    return res.status(500).json({
+      error: `Tenant "${tenant.id}" sem url/key. Configure ACTIVE_TENANT + tenants.json (ou WAVES_URL/WAVES_TOKEN).`,
+    });
   }
   const upstreamPath = req.url.replace(/^\/api\/waves/, "") || "/";
-  const url = `${WAVES_UPSTREAM}${upstreamPath}`;
+  const url = `${tenant.url}${upstreamPath}`;
 
   const headers: Record<string, string> = {
-    "X-API-KEY": WAVES_API_KEY,
+    "X-API-KEY": tenant.key,
     Accept: "application/json",
   };
   if (req.headers.authorization) {
@@ -293,6 +315,7 @@ app.get("/api/runtime", (req, res) => {
 // Lista de profiles disponíveis (fixa por enquanto). Frontend usa pra montar
 // as tabs. Quando virar dinâmico: ler de /home/bot/.hermes/profiles/.
 app.get("/api/profiles", (_req, res) => {
+  res.set("Cache-Control", "no-store");
   res.json({ profiles: listProfiles() });
 });
 

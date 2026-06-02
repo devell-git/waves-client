@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { loginApi } from "../api/waves-api";
 import { isEnvConfigured } from "../config/env";
 import { createSession, saveSession } from "../lib/session";
+import { brandOr, fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import type { AuthSession } from "../types/auth";
 
 const WAVES_LOGIN_ASSETS =
   "https://waves.devell.com.br/storage/app/tenants/waves/landing-page/login";
 
-const LOGIN_LOGO_URL = `${WAVES_LOGIN_ASSETS}/login_image.png`;
-const LOGIN_HERO_URL = `${WAVES_LOGIN_ASSETS}/login_bg_image.jpg`;
+// Fallbacks (tenant "waves") usados quando o branding do tenant vem vazio.
+const DEFAULT_LOGIN_LOGO_URL = `${WAVES_LOGIN_ASSETS}/login_image.png`;
+const DEFAULT_LOGIN_HERO_URL = `${WAVES_LOGIN_ASSETS}/login_bg_image.jpg`;
 const LOGIN_HERO_MOBILE_URL = `${WAVES_LOGIN_ASSETS}/login_mobile_bg_image.jpg`;
 const FORGOT_PASSWORD_URL = "https://waves.devell.com.br/forgot-password";
 
@@ -21,6 +23,26 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
+
+  // Branding do tenant da origem (logos + imagem de login).
+  useEffect(() => {
+    let alive = true;
+    fetchTenantBranding().then((b) => {
+      if (alive) setBranding(b);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Logo: prefere a versão dark (painel claro), cai na white, depois no default.
+  const logoUrl = brandOr(
+    branding?.logo_dark || branding?.logo_white,
+    DEFAULT_LOGIN_LOGO_URL,
+  );
+  const heroUrl = brandOr(branding?.img_login, DEFAULT_LOGIN_HERO_URL);
+  const heroMobileUrl = brandOr(branding?.img_login, LOGIN_HERO_MOBILE_URL);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -39,7 +61,11 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
     try {
       const result = await loginApi(email.trim(), password);
-      const session = createSession(result);
+      // Tenant da origem (host) — vincula as threads. Usa o já carregado ou
+      // resolve agora se ainda não chegou.
+      const tenantId =
+        branding?.tenant ?? (await fetchTenantBranding())?.tenant ?? undefined;
+      const session = createSession(result, tenantId);
       saveSession(session);
       onLogin(session);
     } catch (err) {
@@ -55,7 +81,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <div className="login-layout">
       <section className="login-panel">
         <div className="login-panel-inner">
-          <img className="login-logo" src={LOGIN_LOGO_URL} alt="Waves" />
+          <img className="login-logo" src={logoUrl} alt={branding?.tenant ?? "Waves"} />
 
           <h1 className="login-headline">Inteligência que Simplifica</h1>
           <p className="login-tagline">
@@ -127,8 +153,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         className="login-hero"
         style={
           {
-            "--login-hero": `url("${LOGIN_HERO_URL}")`,
-            "--login-hero-mobile": `url("${LOGIN_HERO_MOBILE_URL}")`,
+            "--login-hero": `url("${heroUrl}")`,
+            "--login-hero-mobile": `url("${heroMobileUrl}")`,
           } as React.CSSProperties
         }
         aria-hidden="true"

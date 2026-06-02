@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { verifyApiSession } from "./api/waves-api";
 import { ChatPage } from "./components/ChatPage";
 import { LoginPage } from "./components/LoginPage";
-import { clearSession, loadSession } from "./lib/session";
+import { clearSession, loadSession, saveSession } from "./lib/session";
+import { fetchTenantBranding } from "./lib/tenant";
 import type { AuthSession } from "./types/auth";
 
+/**
+ * Rotas: `/login` (tela de login) e `/chat` (tela de chat), separadas por URL
+ * com guarda de auth. Sem sessão e indo pro `/chat` → redireciona pro `/login`;
+ * logado e indo pro `/login` → vai pro `/chat`. Qualquer outra rota cai no
+ * destino certo conforme a sessão.
+ */
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [checking, setChecking] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -23,7 +32,18 @@ export default function App() {
       if (cancelled) return;
 
       if (valid) {
-        setSession(stored);
+        // Backfill do tenant em sessões antigas (pré-multi-tenant) pra o
+        // prefixo das threads no front bater com o do servidor (host-resolved).
+        let next = stored;
+        if (!next.tenant) {
+          const b = await fetchTenantBranding();
+          if (cancelled) return;
+          if (b?.tenant) {
+            next = { ...next, tenant: b.tenant };
+            saveSession(next);
+          }
+        }
+        setSession(next);
       } else {
         clearSession();
       }
@@ -36,14 +56,19 @@ export default function App() {
     };
   }, []);
 
-  const handleLogin = useCallback((next: AuthSession) => {
-    setSession(next);
-  }, []);
+  const handleLogin = useCallback(
+    (next: AuthSession) => {
+      setSession(next);
+      navigate("/chat", { replace: true });
+    },
+    [navigate],
+  );
 
   const handleLogout = useCallback(() => {
     clearSession();
     setSession(null);
-  }, []);
+    navigate("/login", { replace: true });
+  }, [navigate]);
 
   if (checking) {
     return (
@@ -53,9 +78,29 @@ export default function App() {
     );
   }
 
-  if (session) {
-    return <ChatPage session={session} onLogout={handleLogout} />;
-  }
-
-  return <LoginPage onLogin={handleLogin} />;
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          session ? (
+            <Navigate to="/chat" replace />
+          ) : (
+            <LoginPage onLogin={handleLogin} />
+          )
+        }
+      />
+      <Route
+        path="/chat"
+        element={
+          session ? (
+            <ChatPage session={session} onLogout={handleLogout} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route path="*" element={<Navigate to={session ? "/chat" : "/login"} replace />} />
+    </Routes>
+  );
 }
