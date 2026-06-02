@@ -42,6 +42,10 @@ export interface TenantBranding {
   logo_white?: string;
   logo_dark?: string;
   img_login?: string;
+  /** Base WEB do tenant (api_url sem o /api) — pro forgot-password etc. */
+  web_url?: string;
+  /** URL de "esqueci a senha" (override; senão derivada de web_url). */
+  forgot_password_url?: string;
 }
 
 export interface Tenant {
@@ -62,6 +66,7 @@ interface TenantEntry {
   logo_white?: string;
   logo_dark?: string;
   img_login?: string;
+  forgot_password_url?: string;
 }
 
 const tenantStore = new AsyncLocalStorage<Tenant>();
@@ -79,9 +84,12 @@ function normalizeHost(host: string | undefined): string {
 }
 
 function toTenant(e: TenantEntry): Tenant {
+  const url = (e.api_url ?? "").trim().replace(/\/+$/, "");
+  // Base WEB = api_url sem o sufixo /api (ex.: .../api → ...).
+  const webUrl = url.replace(/\/api$/i, "");
   return {
     id: e.tenant,
-    url: (e.api_url ?? "").trim().replace(/\/+$/, ""),
+    url,
     // api_key opcional → fallback pra WAVES_TOKEN (migração mono-key).
     key: (e.api_key ?? process.env.WAVES_TOKEN ?? "").trim(),
     hosts: (e.hosts ?? []).map((h) => normalizeHost(h)).filter(Boolean),
@@ -90,6 +98,10 @@ function toTenant(e: TenantEntry): Tenant {
       logo_white: e.logo_white,
       logo_dark: e.logo_dark,
       img_login: e.img_login,
+      web_url: webUrl || undefined,
+      forgot_password_url:
+        e.forgot_password_url?.trim() ||
+        (webUrl ? `${webUrl}/forgot-password` : undefined),
     },
   };
 }

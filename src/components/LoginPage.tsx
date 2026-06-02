@@ -2,17 +2,8 @@ import { useEffect, useState } from "react";
 import { loginApi } from "../api/waves-api";
 import { isEnvConfigured } from "../config/env";
 import { createSession, saveSession } from "../lib/session";
-import { brandOr, fetchTenantBranding, type TenantBranding } from "../lib/tenant";
+import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import type { AuthSession } from "../types/auth";
-
-const WAVES_LOGIN_ASSETS =
-  "https://waves.devell.com.br/storage/app/tenants/waves/landing-page/login";
-
-// Fallbacks (tenant "waves") usados quando o branding do tenant vem vazio.
-const DEFAULT_LOGIN_LOGO_URL = `${WAVES_LOGIN_ASSETS}/login_image.png`;
-const DEFAULT_LOGIN_HERO_URL = `${WAVES_LOGIN_ASSETS}/login_bg_image.jpg`;
-const LOGIN_HERO_MOBILE_URL = `${WAVES_LOGIN_ASSETS}/login_mobile_bg_image.jpg`;
-const FORGOT_PASSWORD_URL = "https://waves.devell.com.br/forgot-password";
 
 interface LoginPageProps {
   onLogin: (session: AuthSession) => void;
@@ -36,13 +27,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     };
   }, []);
 
-  // Logo: prefere a versão dark (painel claro), cai na white, depois no default.
-  const logoUrl = brandOr(
-    branding?.logo_dark || branding?.logo_white,
-    DEFAULT_LOGIN_LOGO_URL,
-  );
-  const heroUrl = brandOr(branding?.img_login, DEFAULT_LOGIN_HERO_URL);
-  const heroMobileUrl = brandOr(branding?.img_login, LOGIN_HERO_MOBILE_URL);
+  // Branding 100% do TENANT (sem fallback hardcoded). Ausente → neutro/branco.
+  const logoUrl =
+    branding?.logo_dark?.trim() || branding?.logo_white?.trim() || "";
+  const heroUrl = branding?.img_login?.trim() || "";
+  const heroMobileUrl = heroUrl;
+  const forgotUrl = branding?.forgot_password_url?.trim() || "";
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -81,7 +71,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <div className="login-layout">
       <section className="login-panel">
         <div className="login-panel-inner">
-          <img className="login-logo" src={logoUrl} alt={branding?.tenant ?? "Waves"} />
+          {logoUrl && (
+            <img className="login-logo" src={logoUrl} alt={branding?.tenant ?? ""} />
+          )}
 
           <h1 className="login-headline">Inteligência que Simplifica</h1>
           <p className="login-tagline">
@@ -116,14 +108,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <div className="field field--password">
               <div className="field-password-row">
                 <label htmlFor="login-password">Digite a Senha</label>
-                <a
-                  className="login-forgot"
-                  href={FORGOT_PASSWORD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Esqueceu a Senha?
-                </a>
+                {forgotUrl && (
+                  <a
+                    className="login-forgot"
+                    href={forgotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Esqueceu a Senha?
+                  </a>
+                )}
               </div>
               <input
                 id="login-password"
@@ -153,8 +147,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         className="login-hero"
         style={
           {
-            "--login-hero": `url("${heroUrl}")`,
-            "--login-hero-mobile": `url("${heroMobileUrl}")`,
+            // Sem img do tenant → "none" (painel neutro, sem url("") quebrado).
+            "--login-hero": heroUrl ? `url("${heroUrl}")` : "none",
+            "--login-hero-mobile": heroMobileUrl ? `url("${heroMobileUrl}")` : "none",
           } as React.CSSProperties
         }
         aria-hidden="true"

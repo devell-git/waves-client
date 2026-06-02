@@ -11,6 +11,10 @@ export interface TenantBranding {
   logo_white?: string;
   logo_dark?: string;
   img_login?: string;
+  /** Base WEB do tenant (pro forgot-password etc.). */
+  web_url?: string;
+  /** URL de "esqueci a senha" do tenant. */
+  forgot_password_url?: string;
 }
 
 export async function fetchTenantBranding(): Promise<TenantBranding | null> {
