@@ -40,6 +40,9 @@ interface ChatComposerProps {
    */
   attachmentsRef: MutableRefObject<UploadedFile[]>;
   placeholder?: string;
+  /** Modo de reasoning atual ("low" rápido | "medium" aprofundado) e toggle. */
+  reasoningMode?: "low" | "medium";
+  onToggleReasoning?: () => void;
 }
 
 function iconForKind(kind: UploadKind) {
@@ -50,6 +53,8 @@ function iconForKind(kind: UploadKind) {
 
 export function ChatComposer({
   attachmentsRef,
+  reasoningMode,
+  onToggleReasoning,
   placeholder = "Digite sua mensagem…",
 }: ChatComposerProps) {
   const processMessage = useThread((s) => s.processMessage);
@@ -244,6 +249,21 @@ export function ChatComposer({
           >
             <Plus size={18} />
           </button>
+          {onToggleReasoning && (
+            <button
+              type="button"
+              className="waves-composer__reasoning-button"
+              aria-pressed={reasoningMode === "medium"}
+              title={
+                reasoningMode === "medium"
+                  ? "Modo aprofundado: análise mais profunda, porém mais lenta. Clique p/ rápido."
+                  : "Modo rápido: respostas ágeis. Clique p/ análise aprofundada."
+              }
+              onClick={onToggleReasoning}
+            >
+              {reasoningMode === "medium" ? "🧠 Aprofundado" : "⚡ Rápido"}
+            </button>
+          )}
           <button
             type="button"
             className="openui-shell-thread-composer__submit-button waves-composer__submit-button"

@@ -649,6 +649,21 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile, activeThreadId, tenantId]);
 
+  // Modo de reasoning: "low" (⚡ rápido) | "medium" (🧠 aprofundado). Vira o
+  // header X-Hermes-Reasoning-Effort no /api/chat. NOTA: usamos "low" e não
+  // "none" no rápido — sem reasoning o gpt-5.4 SE ENROLA em perguntas complexas
+  // (4-5 turnos vs 1), ficando mais lento. "low" mantém o planejamento mínimo.
+  const [reasoningMode, setReasoningMode] = useState<"low" | "medium">(() => {
+    if (typeof window === "undefined") return "low";
+    const v = window.localStorage.getItem(`waves-reasoning-${loadActiveProfileId()}`);
+    return v === "medium" ? "medium" : "low";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(`waves-reasoning-${activeProfile}`, reasoningMode);
+    }
+  }, [activeProfile, reasoningMode]);
+
   const handleProfileChange = (id: string) => {
     if (id === activeProfile) return;
     setActiveProfile(id);
@@ -800,6 +815,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             !threadId || ["", "ephemeral", "default", "shared", "main"].includes(threadId)
               ? activeThreadId
               : threadId,
+          reasoningEffort: reasoningMode,
           wavesSession: {
             environment: session.environment,
             accessToken: session.accessToken,
@@ -853,6 +869,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     [
       activeProfile,
       activeThreadId,
+      reasoningMode,
       session,
       userScope,
       defaultWorkflowId,
@@ -982,7 +999,11 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                     onScopeRefresh={setUserScope}
                   />
                 </Shell.ScrollArea>
-                <ChatComposer attachmentsRef={attachmentsRef} />
+                <ChatComposer
+                  attachmentsRef={attachmentsRef}
+                  reasoningMode={reasoningMode}
+                  onToggleReasoning={() => setReasoningMode((m) => (m === "low" ? "medium" : "low"))}
+                />
               </Shell.ThreadContainer>
             </Shell.Container>
           </ChatProvider>
