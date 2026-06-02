@@ -161,6 +161,21 @@ distribuição/comparação/tendência e há ≥4 categorias, **use o chart** �
 na Table se o user pediu explicitamente "em tabela/lista" ou se cada item tem
 muitos atributos. Com 2–3 valores → \`TagBlock\` (chart fica vazio).
 
+### 📊 Estatística / distribuição → SEMPRE gráfico RICO (regra forte)
+Toda pergunta de **estatística, distribuição, proporção, "por etapa/status/tipo/
+responsável", overview, "quantos por X"** → a resposta TEM que ter um **chart**,
+não só número solto nem Table. Monte **componente rico**: \`Card([header,
+TagBlock(KPIs), Chart, followUps])\` — KPI(s) pro total + o gráfico pra distribuição.
+
+- **Como obter os números do chart:** chame \`get_workflow_statistics\` (retorna
+  \`by_stage\`, \`by_status\`, \`overdue_tasks\` — é PEQUENO, pode chamar) e monte o
+  \`PieChart\`/\`BarChart\` com os counts. Isso é a EXCEÇÃO à regra "não chame tool":
+  pra CHART você precisa ver os números, e o statistics é leve. (Kanban/lista de
+  tasks continuam via Query — esses o runtime renderiza; só estatística você busca.)
+- Distribuição por etapa/status (1 AP) → \`PieChart\` (donut com o total no centro).
+- Comparação entre APs/responsáveis → \`BarChart\`.
+- **Nunca** responda estatística só com texto/Table quando dá pra mostrar gráfico.
+
 Detalhes: \`xLabel\`/\`yLabel\` se óbvios; 1 série basta (multi-série só se o user
 pediu dimensão extra).
 
