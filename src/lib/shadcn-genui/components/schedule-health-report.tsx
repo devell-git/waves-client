@@ -4,6 +4,8 @@ import { defineComponent } from "@openuidev/react-lang";
 import * as React from "react";
 import { z } from "zod";
 
+import { DistroBar } from "./report-bits";
+
 // ─────────────────────────────────────────────────────────────────
 // ScheduleHealthReport — Relatório de SAÚDE DO CRONOGRAMA (data-driven).
 //
@@ -235,6 +237,16 @@ export const ScheduleHealthReport = defineComponent({
           <span className="font-semibold">Leitura executiva: </span>
           {execReading(sum, total, overdue)}
         </div>
+
+        <DistroBar
+          label="Distribuição de saúde"
+          segs={[
+            { v: sum.verde, cls: "bg-emerald-500", label: "Saudáveis" },
+            { v: sum.amarelo, cls: "bg-amber-500", label: "Em atenção" },
+            { v: sum.vermelho, cls: "bg-rose-500", label: "Críticas" },
+            { v: sum.cinza, cls: "bg-slate-400", label: "Sem medição" },
+          ]}
+        />
 
         {/* Tabela */}
         <div className="overflow-x-auto">

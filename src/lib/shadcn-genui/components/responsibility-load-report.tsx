@@ -4,6 +4,8 @@ import { defineComponent } from "@openuidev/react-lang";
 import * as React from "react";
 import { z } from "zod";
 
+import { HBars } from "./report-bits";
+
 // ─────────────────────────────────────────────────────────────────
 // ResponsibilityLoadReport — Relatório de RESPONSABILIDADE E CARGA.
 //
@@ -176,6 +178,13 @@ export const ResponsibilityLoadReport = defineComponent({
           <span className="font-semibold">Leitura executiva: </span>
           {exec}
         </div>
+        <HBars
+          items={people.slice(0, 8).map((p) => ({
+            label: p.name.replace(/^—\s*/, "Sem resp."),
+            total: p.total,
+            risk: p.criticas,
+          }))}
+        />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
             <thead>

@@ -4,6 +4,8 @@ import { defineComponent } from "@openuidev/react-lang";
 import * as React from "react";
 import { z } from "zod";
 
+import { DistroBar } from "./report-bits";
+
 // ─────────────────────────────────────────────────────────────────
 // PendingCriticalReport — Relatório de PENDÊNCIAS CRÍTICAS (data-driven).
 //
@@ -166,7 +168,7 @@ export const PendingCriticalReport = defineComponent({
       { label: "Vencidas", v: counts.vencida, cls: "border-rose-500/30 bg-rose-500/5" },
       { label: "Sem responsável", v: counts.sem_resp, cls: "border-rose-500/30 bg-rose-500/5" },
       { label: "Sem prazo", v: counts.sem_prazo, cls: "border-amber-500/30 bg-amber-500/5" },
-      { label: "Total críticas", v: rows.length, cls: "border-border bg-muted/30" },
+      { label: "Total pendências", v: rows.length, cls: "border-border bg-muted/30" },
     ];
     const exec =
       `${rows.length} ${rows.length === 1 ? "pendência crítica" : "pendências críticas"} no AP (${counts.vencida} vencidas, ${counts.sem_resp} sem responsável, ${counts.sem_prazo} sem prazo). ` +
@@ -190,6 +192,15 @@ export const PendingCriticalReport = defineComponent({
           <span className="font-semibold">Leitura executiva: </span>
           {exec}
         </div>
+        <DistroBar
+          label="Pendências por tipo"
+          segs={[
+            { v: counts.vencida, cls: "bg-rose-500", label: "Vencidas" },
+            { v: counts.sem_resp, cls: "bg-orange-500", label: "Sem responsável" },
+            { v: counts.outras, cls: "bg-amber-500", label: "Paradas/dependência" },
+            { v: counts.sem_prazo, cls: "bg-slate-400", label: "Sem prazo" },
+          ]}
+        />
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
             <thead>
