@@ -53,6 +53,7 @@ import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import { getKanbanCtx } from "../lib/kanban-context";
+import { loadShortcuts, saveShortcutExchange } from "../lib/shortcut-history";
 import {
   ensureToolProvider,
   getToolProvider,
@@ -577,7 +578,7 @@ function syntheticSse(content: string): Response {
 // Response SSE (renderiza sem LLM) ou null (cai no fluxo normal /api/chat).
 // Determinístico: o openui-lang é fixo, então não gastamos turno de LLM (que
 // ainda por cima é inconsistente — às vezes nem re-renderiza). Nunca lança.
-async function tryWorkflowViewShortcut(text: string): Promise<Response | null> {
+async function tryWorkflowViewShortcut(text: string): Promise<string | null> {
   if (!text) return null;
   const isGantt = OPEN_GANTT_INTENT.test(text);
   const isKanban = !isGantt && OPEN_KANBAN_INTENT.test(text);
@@ -607,10 +608,9 @@ async function tryWorkflowViewShortcut(text: string): Promise<Response | null> {
   }
   if (workflowId == null) return null; // não deu pra resolver → deixa o agente
   const lbl = shownLabel ?? String(workflowId);
-  const content = isGantt
+  return isGantt
     ? buildGanttOpenui(workflowId, lbl, resolvedName)
     : buildKanbanOpenui(workflowId, lbl, resolvedName);
-  return syntheticSse(content);
 }
 
 // Restaura o chat ao recarregar a página. O backend (state.db do Hermes) guarda
@@ -636,16 +636,34 @@ function ThreadRestorer({
     if (isSwitch) setMessages([]);
     let cancelled = false;
     (async () => {
+      let msgs: Awaited<ReturnType<typeof getThreadMessages>> = [];
       try {
-        const msgs = await getThreadMessages(profileId, fullThreadKey);
-        if (cancelled || msgs.length === 0) return;
-        const restored = msgs
-          .map(toOpenUIMessage)
-          .filter((m): m is Message => m !== null);
-        if (restored.length) setMessages(restored);
+        msgs = await getThreadMessages(profileId, fullThreadKey);
       } catch {
-        /* sem histórico / rede — começa conversa vazia */
+        /* sem histórico / rede — segue só com os atalhos locais (se houver) */
       }
+      if (cancelled) return;
+      // Mescla o histórico do gateway com as mensagens de ATALHO (Gantt/kanban)
+      // guardadas em localStorage — elas não passam pelo gateway, então não
+      // estão no state.db. Ordena por timestamp; dedup por conteúdo (caso um
+      // turno real tenha persistido a mesma UI depois).
+      const norm = (t: number) => (t && t < 1e12 ? t * 1000 : t || 0);
+      const gwContents = new Set(msgs.map((m) => m.content));
+      const items: Array<{ ts: number; msg: Message }> = [];
+      msgs.forEach((m) => {
+        const om = toOpenUIMessage(m);
+        if (om) items.push({ ts: norm(m.timestamp), msg: om });
+      });
+      for (const s of loadShortcuts(fullThreadKey)) {
+        if (gwContents.has(s.content)) continue;
+        items.push({
+          ts: s.ts,
+          msg: { id: `sc-${s.ts}-${s.role}`, role: s.role, content: s.content } as Message,
+        });
+      }
+      if (cancelled || items.length === 0) return;
+      items.sort((a, b) => a.ts - b.ts);
+      setMessages(items.map((i) => i.msg));
     })();
     return () => {
       cancelled = true;
@@ -908,8 +926,13 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         if (lastMsg?.role === "user" && lastMsg.content != null && !attachments.length) {
           const userText =
             typeof lastMsg.content === "string" ? lastMsg.content : String(lastMsg.content);
-          const shortcut = await tryWorkflowViewShortcut(userText.trim());
-          if (shortcut) return shortcut;
+          const openui = await tryWorkflowViewShortcut(userText.trim());
+          if (openui) {
+            // Persiste local pra sobreviver ao reload (o atalho não passa pelo
+            // gateway, então não entra no state.db; o ThreadRestorer mescla).
+            saveShortcutExchange(`${threadKeyPrefix}${activeThreadId}`, userText.trim(), openui);
+            return syntheticSse(openui);
+          }
         }
 
         // Guarda a requisição exata (follow-up, composer, etc.) para retomar após
