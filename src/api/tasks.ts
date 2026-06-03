@@ -150,7 +150,9 @@ export async function updateTask(
     funnel_stage_id: number;
     assigned_to: number;
     visible_to_users: number[];
-    due_date: string;
+    start_date: string | null;
+    due_date: string | null;
+    done_date: string | null;
   }>,
 ): Promise<void> {
   const r = await fetch(`/api/waves/tasks/${taskId}`, {

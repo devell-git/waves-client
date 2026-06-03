@@ -56,11 +56,6 @@ function Collapsible({
   );
 }
 
-function fmtDate(d: string | null): string {
-  if (!d) return "—";
-  const [y, m, day] = d.split("-");
-  return y && m && day ? `${day}/${m}/${y}` : d;
-}
 
 /**
  * Modal NATIVO de edição de task (caminho B). Ao abrir (taskId != null), faz um
@@ -108,6 +103,8 @@ export function TaskEditModal({
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [viewers, setViewers] = useState<number[]>([]);
   const [dueDate, setDueDate] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [doneDate, setDoneDate] = useState<string>("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
 
   useEffect(() => {
@@ -131,6 +128,8 @@ export function TaskEditModal({
         setAssignedTo(t.assignedTo != null ? String(t.assignedTo) : "");
         setViewers(t.visibleToUserIds);
         setDueDate(t.dueDate ?? "");
+        setStartDate(t.startedAt ?? "");
+        setDoneDate(t.completedAt ?? "");
         setChecklist(t.checklist);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Falha ao carregar a task.");
@@ -167,7 +166,10 @@ export function TaskEditModal({
     if (title.trim() && title !== orig.title) patch.title = title.trim();
     if (stageId && Number(stageId) !== orig.funnelStageId) patch.funnel_stage_id = Number(stageId);
     if (assignedTo && Number(assignedTo) !== orig.assignedTo) patch.assigned_to = Number(assignedTo);
-    if (dueDate && dueDate !== orig.dueDate) patch.due_date = dueDate;
+    // Datas: envia se mudou (valor → seta; vazio → null pra limpar).
+    if (dueDate !== (orig.dueDate ?? "")) patch.due_date = dueDate || null;
+    if (startDate !== (orig.startedAt ?? "")) patch.start_date = startDate || null;
+    if (doneDate !== (orig.completedAt ?? "")) patch.done_date = doneDate || null;
     const sameViewers =
       viewers.length === orig.visibleToUserIds.length &&
       viewers.every((id) => orig.visibleToUserIds.includes(id));
@@ -284,14 +286,20 @@ export function TaskEditModal({
 
             <div className="grid grid-cols-3 gap-3">
               <Field label="Início">
-                <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  {fmtDate(orig?.startedAt ?? null)}
-                </div>
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
               </Field>
               <Field label="Concluído">
-                <div className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  {fmtDate(orig?.completedAt ?? null)}
-                </div>
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={doneDate}
+                  onChange={(e) => setDoneDate(e.target.value)}
+                />
               </Field>
               <Field label="Prazo">
                 <input
