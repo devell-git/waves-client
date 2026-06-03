@@ -157,10 +157,10 @@ export const ResponsibilityLoadReport = defineComponent({
       { label: "Mais carregado", v: top.name.replace(/^—\s*/, "").split(" ")[0] || "—", cls: "border-amber-500/30 bg-amber-500/5", small: true },
     ];
     const exec =
-      `${people.length} responsáveis em ${totalTasks} tarefas. ` +
+      `${people.length} ${people.length === 1 ? "responsável" : "responsáveis"} em ${totalTasks} tarefas. ` +
       (totalCrit > 0
-        ? `${top.name} concentra o maior risco (${top.criticas} crítica${top.criticas > 1 ? "s" : ""}). Redistribuir/destravar.`
-        : "Carga equilibrada, sem concentração crítica.");
+        ? `A carga de risco está concentrada em ${top.name} (${top.criticas} de ${top.total} ${top.total === 1 ? "tarefa crítica" : "críticas"}) — redistribuir ou destravar essa frente reduz o gargalo do AP.`
+        : "Carga equilibrada, sem concentração crítica de risco entre os responsáveis.");
 
     return (
       <div className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">

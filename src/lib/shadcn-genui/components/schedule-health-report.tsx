@@ -128,7 +128,13 @@ const H_STYLE: Record<Health, { dot: string; text: string; label: string }> = {
   cinza: { dot: "bg-slate-400", text: "text-slate-500", label: "Não medível" },
 };
 
-function compute(data: unknown): { workflowId?: number; rows: HRow[]; sum: Record<Health, number>; total: number } {
+function compute(data: unknown): {
+  workflowId?: number;
+  rows: HRow[];
+  sum: Record<Health, number>;
+  total: number;
+  overdue: number;
+} {
   const d = (data ?? {}) as Record<string, unknown>;
   const workflowId = d.workflow_id != null ? n(d.workflow_id) : undefined;
   const raw = (Array.isArray(d.rows) ? d.rows : []) as Row[];
@@ -137,21 +143,44 @@ function compute(data: unknown): { workflowId?: number; rows: HRow[]; sum: Recor
     return order.indexOf(a.health) - order.indexOf(b.health);
   });
   const sum: Record<Health, number> = { verde: 0, amarelo: 0, vermelho: 0, cinza: 0 };
-  for (const r of rows) sum[r.health]++;
-  return { workflowId, rows, sum, total: rows.length };
+  let overdue = 0;
+  for (const r of rows) {
+    sum[r.health]++;
+    if (r.health === "vermelho" && r.restantes != null && r.restantes < 0) overdue++;
+  }
+  return { workflowId, rows, sum, total: rows.length, overdue };
 }
 
-function execReading(sum: Record<Health, number>, total: number): string {
+// Leitura executiva DESCRITIVA: não só conta — interpreta o padrão e aponta a
+// prioridade (gerada do dado, sem LLM).
+function execReading(sum: Record<Health, number>, total: number, overdue: number): string {
   if (!total) return "Sem tarefas mensuráveis no período.";
-  const parts = [`${total} tarefas: ${sum.verde} saudáveis, ${sum.amarelo} em atenção, ${sum.vermelho} críticas`];
-  if (sum.cinza) parts.push(`${sum.cinza} sem medição`);
-  const tail =
-    sum.vermelho > 0
-      ? ` ${sum.vermelho} ${sum.vermelho === 1 ? "item exige" : "itens exigem"} ação imediata.`
-      : sum.amarelo > 0
-        ? " Ritmo abaixo do esperado em alguns itens — acompanhar."
-        : " Cronograma aderente ao planejado.";
-  return parts.join(", ") + "." + tail;
+  const crit = sum.vermelho;
+  const critPct = Math.round((crit / total) * 100);
+  const behind = crit - overdue; // críticas que ainda não venceram, mas atrás
+
+  let head: string;
+  if (crit === 0 && sum.amarelo === 0)
+    head = `Cronograma aderente: ${sum.verde} de ${total} tarefas no ritmo planejado ou à frente.`;
+  else if (critPct >= 60)
+    head = `Cronograma sob forte pressão — ${crit} de ${total} tarefas críticas (${critPct}%)${sum.verde === 0 ? ", nenhuma saudável" : `, só ${sum.verde} saudáveis`}.`;
+  else head = `Atenção: ${crit} ${crit === 1 ? "tarefa crítica" : "críticas"} e ${sum.amarelo} em atenção de ${total}.`;
+
+  let interp = "";
+  if (crit > 0) {
+    if (overdue >= crit * 0.6)
+      interp =
+        ` O padrão é acúmulo de itens VENCIDOS (${overdue}) com avanço real baixo — o cronograma vira registro de atraso, não instrumento de gestão. Prioridade: destravar/repactuar as vencidas por criticidade antes de reprogramar o resto.`;
+    else if (behind > 0)
+      interp =
+        ` A maioria das críticas ainda não venceu (${behind} perigosamente atrás do esperado) — janela curta pra acelerar antes de virar atraso.`;
+    else
+      interp = ` ${overdue} ${overdue === 1 ? "item vencido exige" : "vencidos exigem"} ação imediata.`;
+  } else if (sum.amarelo > 0) {
+    interp = ` Ritmo abaixo do esperado em ${sum.amarelo} ${sum.amarelo === 1 ? "item" : "itens"}, ainda recuperável — acompanhar de perto pra não escalar.`;
+  }
+  if (sum.cinza > 0) interp += ` ${sum.cinza} sem medição (definir início/prazo).`;
+  return head + interp;
 }
 
 const CARDS: Array<{ k: Health | "total"; label: string; cls: string }> = [
@@ -177,7 +206,7 @@ export const ScheduleHealthReport = defineComponent({
     '"saúde do cronograma / avanço esperado vs real / desvio" de um AP. Padrão: ' +
     '`h = Query("get_schedule_health", {workflow_id: 90}, {rows: []})` + `rep = ScheduleHealthReport(h)`.',
   component: ({ props }) => {
-    const { rows, sum, total } = React.useMemo(() => compute(props.data), [props.data]);
+    const { rows, sum, total, overdue } = React.useMemo(() => compute(props.data), [props.data]);
 
     if (!total) {
       return (
@@ -202,9 +231,9 @@ export const ScheduleHealthReport = defineComponent({
         </div>
 
         {/* Leitura executiva automática */}
-        <div className="border-b bg-muted/20 px-3 py-2 text-xs">
+        <div className="border-b bg-muted/20 px-3 py-2 text-xs leading-relaxed">
           <span className="font-semibold">Leitura executiva: </span>
-          {execReading(sum, total)}
+          {execReading(sum, total, overdue)}
         </div>
 
         {/* Tabela */}

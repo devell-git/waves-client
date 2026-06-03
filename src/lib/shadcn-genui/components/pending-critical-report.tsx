@@ -169,12 +169,12 @@ export const PendingCriticalReport = defineComponent({
       { label: "Total críticas", v: rows.length, cls: "border-border bg-muted/30" },
     ];
     const exec =
-      `${rows.length} pendências: ${counts.vencida} vencidas, ${counts.sem_resp} sem responsável, ${counts.sem_prazo} sem prazo.` +
+      `${rows.length} ${rows.length === 1 ? "pendência crítica" : "pendências críticas"} no AP (${counts.vencida} vencidas, ${counts.sem_resp} sem responsável, ${counts.sem_prazo} sem prazo). ` +
       (counts.vencida > 0
-        ? ` ${counts.vencida} ${counts.vencida === 1 ? "item vencido exige" : "itens vencidos exigem"} ação imediata.`
+        ? `O peso está nas ${counts.vencida} VENCIDAS — destravar/repactuar por criticidade é o 1º passo${counts.sem_resp > 0 ? `; ${counts.sem_resp} ainda sem dono (atribuir antes de cobrar)` : ""}.`
         : counts.sem_resp > 0
-          ? " Há itens sem dono — atribuir responsável destrava."
-          : " Foco em definir prazos e iniciar os parados.");
+          ? `Nenhuma vencida ainda, mas ${counts.sem_resp} sem responsável — sem dono não anda; atribuir destrava.`
+          : `Sem vencidas — foco em definir prazos e iniciar os parados antes que virem atraso.`);
 
     return (
       <div className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
