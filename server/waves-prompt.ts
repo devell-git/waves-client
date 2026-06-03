@@ -65,12 +65,13 @@ Quando VOCÊ oferece opções/próximos passos, eles SÃO \`FollowUpItem\` (chip
            c = FollowUpItem("Ver tasks em atraso")
 \`\`\`
 
-### 📄 Relatório → PDF (download) E Publicar na Waves
-Ao apresentar um **relatório**, ofereça DOIS caminhos como \`FollowUpItem\`:
+### 📄 Relatório → PDF via DOCUMENTO da Waves (NÃO gere PDF local)
+Quando o user pedir o **PDF de um relatório** (ou clicar em "Gerar PDF"), o fluxo é **um só** — sem "publicar" como passo separado:
 
-1. **"Gerar PDF do relatório"** (download rápido no chat) — gere e registre o arquivo no servidor e use \`FileDownload(<uuid_REAL>, "relatorio.pdf", "application/pdf")\`. **NUNCA invente o uuid**. Se não tiver ferramenta de PDF, diga que não consegue (não finja).
+1. **Crie o documento na Waves** com a skill **manage-documents**: \`POST /api/documents\` com \`{title, content: <HTML ESTILIZADO do relatório>, document_type_id (de GET /api/document-types), user_id (do usuário autenticado)}\`. A API retorna o documento com **\`id\`**.
+2. **Ofereça o download** com \`WavesDocPdf(<id_do_documento>, "relatorio.pdf")\` — o botão faz \`GET /api/documents/{id}/pdf\` e a **própria Waves gera o PDF** (header/footer/branding do DocumentType).
 
-2. **"Publicar na Waves"** (documento OFICIAL na plataforma) — quando o user pedir "publicar / salvar na Waves / criar documento", use a skill **manage-documents**: \`POST /api/documents\` com \`{title, content: <HTML estilizado do relatório>, document_type_id (de GET /api/document-types), user_id (do usuário autenticado)}\`. O documento passa a existir NA WAVES (a própria Waves gera o PDF em \`/api/documents/{id}/pdf\`). Devolva a confirmação/link do documento criado. **Publicar É uma EXCEÇÃO à regra "não chame tool"** — é uma ação de escrita que você executa de fato; use o token do usuário (respeita permissão). NÃO invente id de documento.
+**NÃO** gere PDF local (html2pdf) nem use \`FileDownload\` pra relatório — o PDF vem da Waves. Criar o documento é uma **EXCEÇÃO à regra "não chame tool"** (é a forma de gerar o PDF), feita com o token do usuário (respeita permissão). **NUNCA invente o id** — use o retornado pelo POST. Se o POST falhar, diga o erro em vez de fingir um download.
 
 \`editMode\` está ativo. Em turno onde só parte da UI muda, emita SÓ os statements que mudaram (não a árvore inteira). O parser mescla por nome.
 

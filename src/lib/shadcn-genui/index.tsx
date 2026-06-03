@@ -14,6 +14,7 @@ import { CardHeader } from "./components/card-header";
 import { CodeBlock } from "./components/code-block";
 import { Image, ImageBlock } from "./components/image";
 import { FileDownload } from "./components/file-download";
+import { WavesDocPdf } from "./components/waves-doc-pdf";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { Progress } from "./components/progress";
 import { Separator } from "./components/separator";
@@ -144,12 +145,14 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "Image",
       "ImageBlock",
       "FileDownload",
+      "WavesDocPdf",
       "Progress",
       "Separator",
     ],
     notes: [
       "- Image/ImageBlock mostram imagem inline (src = URL pública ou data:image/...;base64).",
-      "- FileDownload(id, filename, mimeType?, size?) oferece um arquivo pro usuário BAIXAR (relatório, export). id = uuid do arquivo registrado no servidor (agent-files). NÃO invente o id — use o retornado ao registrar o arquivo.",
+      "- FileDownload(id, filename, mimeType?, size?) — arquivo genérico em agent-files (id = uuid). Para PDF de RELATÓRIO prefira WavesDocPdf (PDF gerado pela Waves).",
+      "- WavesDocPdf(docId, filename?, label?) — botão que baixa o PDF de um DOCUMENTO da Waves (GET /api/documents/{docId}/pdf). FLUXO do PDF de relatório: crie o documento na Waves (skill manage-documents → POST /api/documents com o HTML), pegue o `id` retornado e ofereça `WavesDocPdf(<id>, \"relatorio.pdf\")`. O PDF é gerado pela própria Waves — NÃO gere PDF local nem use FileDownload pra isso.",
     ],
   },
   {
@@ -274,7 +277,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       '- 🔑 SAÚDE DO CRONOGRAMA / avanço esperado vs real / desvio de um AP: SEMPRE `h = Query("get_schedule_health", {workflow_id: <id>}, {rows: []})` + `rep = ScheduleHealthReport(h)`. O RUNTIME compara % esperado (tempo decorrido) vs % real (progress), classifica saúde e monta cards + leitura executiva + tabela. NÃO calcule você mesmo nem monte a tabela à mão.',
       '- 🔑 PENDÊNCIAS CRÍTICAS / bloqueios / "o que está travado" de um AP: SEMPRE `p = Query("get_pending_critical", {workflow_id: <id>}, {rows: []})` + `rep = PendingCriticalReport(p)`. O RUNTIME filtra vencidas/sem responsável/sem prazo/paradas/aguardando dependência e monta cards + leitura executiva + tabela acionável. NÃO filtre você mesmo nem monte a tabela à mão.',
       '- 🔑 CARGA / RESPONSABILIDADE / distribuição por responsável de um AP: SEMPRE `c = Query("get_responsibility_load", {workflow_id: <id>}, {rows: []})` + `rep = ResponsibilityLoadReport(c)`. O RUNTIME agrupa por pessoa (total/seguras/atenção/críticas/vencendo em 7d/% médio/risco/observação). NÃO agrupe você mesmo nem monte a tabela à mão.',
-      '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e feche com followUps "Gerar PDF do relatório" (download no chat) E "Publicar na Waves" (cria o documento OFICIAL na plataforma via skill manage-documents → POST /api/documents). Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
+      '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e ofereça o PDF: crie o documento na Waves (skill manage-documents → POST /api/documents com o HTML) e use `WavesDocPdf(<id>, "relatorio.pdf")` (o botão faz GET /api/documents/{id}/pdf — a Waves gera o PDF). NÃO há "publicar" separado: gerar o PDF JÁ cria o documento na Waves. Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
       '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
       "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks/statistics) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
@@ -457,6 +460,7 @@ export const shadcnChatLibrary = createLibrary({
     Image,
     ImageBlock,
     FileDownload,
+    WavesDocPdf,
     Progress,
     Separator,
     // Tables
