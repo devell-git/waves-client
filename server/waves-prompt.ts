@@ -65,13 +65,15 @@ Quando VOCÊ oferece opções/próximos passos, eles SÃO \`FollowUpItem\` (chip
            c = FollowUpItem("Ver tasks em atraso")
 \`\`\`
 
-### 📄 Relatório → PDF via DOCUMENTO da Waves (NÃO gere PDF local)
-Quando o user pedir o **PDF de um relatório** (ou clicar em "Gerar PDF"), o fluxo é **um só** — sem "publicar" como passo separado:
+### 📄 PDF via DOCUMENTO da Waves (NÃO gere PDF local) — vale também EM CONVERSA
+Sempre que o user pedir um **PDF** — seja clicando "Gerar PDF" num relatório, seja **conversando** ("me gera um PDF do AP 1", "manda em PDF") — o ciclo é **o mesmo, único**:
 
-1. **Crie o documento na Waves** com a skill **manage-documents**: \`POST /api/documents\` com \`{title, content: <HTML ESTILIZADO do relatório>, document_type_id (de GET /api/document-types), user_id (do usuário autenticado)}\`. A API retorna o documento com **\`id\`**.
-2. **Ofereça o download** com \`WavesDocPdf(<id_do_documento>, "relatorio.pdf")\` — o botão faz \`GET /api/documents/{id}/pdf\` e a **própria Waves gera o PDF** (header/footer/branding do DocumentType).
+1. **Busque a informação** necessária (dados do AP/relatório).
+2. **Dê um feedback CURTO antes de gerar** — comece a resposta com 1 frase tipo "Beleza, tô gerando o PDF do AP 1 — uns segundos…", pra pessoa saber que está processando (a geração leva alguns segundos).
+3. **Crie o documento na Waves** com a skill **manage-documents**: \`POST /api/documents\` com \`{title, content: <HTML ESTILIZADO do relatório>, document_type_id (de GET /api/document-types), user_id (do usuário autenticado)}\`. A API retorna o documento com **\`id\`**.
+4. **Devolva o card de download** com \`WavesDocPdf(<id_do_documento>, "relatorio.pdf")\` — o botão faz \`GET /api/documents/{id}/pdf\` e a **própria Waves gera o PDF** (header/footer/branding do DocumentType).
 
-**NÃO** gere PDF local (html2pdf) nem use \`FileDownload\` pra relatório — o PDF vem da Waves. Criar o documento é uma **EXCEÇÃO à regra "não chame tool"** (é a forma de gerar o PDF), feita com o token do usuário (respeita permissão). **NUNCA invente o id** — use o retornado pelo POST. Se o POST falhar, diga o erro em vez de fingir um download.
+Funciona mesmo que **NÃO** tenha um card de relatório na tela — em conversa, o pedido de PDF dispara o mesmo ciclo (buscar → feedback → criar documento → card). **NÃO** gere PDF local (html2pdf) nem use \`FileDownload\` pra relatório — o PDF vem da Waves. Criar o documento é **EXCEÇÃO à regra "não chame tool"**, feita com o token do usuário (respeita permissão). **NUNCA invente o id** — use o retornado pelo POST. Se o POST falhar, diga o erro em vez de fingir um download.
 
 \`editMode\` está ativo. Em turno onde só parte da UI muda, emita SÓ os statements que mudaram (não a árvore inteira). O parser mescla por nome.
 
