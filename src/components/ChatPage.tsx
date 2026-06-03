@@ -53,7 +53,11 @@ import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import { getKanbanCtx } from "../lib/kanban-context";
-import { ensureToolProvider, getToolProvider } from "../lib/openui-tools";
+import {
+  ensureToolProvider,
+  getToolProvider,
+  resolveWorkflowIdByLabel,
+} from "../lib/openui-tools";
 import {
   setAdminFlag,
   isAdmin,
@@ -505,6 +509,110 @@ function appendTaskCard(variant: "created" | "updated", r: TaskFeedback): void {
   );
 }
 
+// ─── Atalho determinístico: "abrir kanban do AP X" → SEM LLM ──────────────
+// O esqueleto do board é fixo (`Query(get_workflow_kanban) + WorkflowKanban`),
+// então não há por que gastar um turno LLM (~38k tok input) pra re-emitir algo
+// constante. Detectamos o intent no transport (cobre composer E followUp),
+// resolvemos o workflow_id client-side (1 GET cacheado) e devolvemos o
+// openui-lang num SSE sintético — o runtime renderiza e busca os dados sozinho.
+// Mesma filosofia do CREATE_TASK_INTENT (modal direto) e do form-cache.
+const OPEN_KANBAN_INTENT =
+  /^\s*(abrir?|abra|mostr(?:ar|e|a)|ver|exib(?:ir|a|e)|carreg(?:ar|a|ue)|ir\s+(?:pra|para|ao|à))\b[^.?!]{0,30}\bkanban\b/i;
+// "Gantt do AP 1", "mostrar o cronograma do 6.4", "ver linha do tempo do AP 2".
+// Verbo opcional (a frase pode começar direto em "Gantt"). NÃO casa "o que é um
+// gantt?" (a palavra não está no início).
+const OPEN_GANTT_INTENT =
+  /^\s*(?:(?:abrir?|abra|mostr(?:ar|e|a)|ver|exib(?:ir|a|e)|gerar?|gere|criar?|crie|montar?|monte|quero|preciso)\b[^.?!]{0,24}\s+)?(gantt|cronograma|linha\s+do\s+tempo|timeline)\b/i;
+// Extrai o rótulo do AP ("AP 6.4", "kanban/gantt/cronograma do 1", "workflow 90").
+const AP_LABEL =
+  /\b(?:ap|action\s*plan|workflow|wf)\s*#?\s*(\d+(?:\.\d+)?)|(?:kanban|gantt|cronograma|timeline)\s+(?:do|da|de|no|pra|para|pro)?\s*#?\s*(\d+(?:\.\d+)?)/i;
+
+function buildKanbanOpenui(workflowId: number, label: string, name?: string): string {
+  const sub = name ? escOL(name) : "Quadro ao vivo · arraste cards, clique pra editar";
+  return [
+    `root = Card([header, board])`,
+    `header = CardHeader("Kanban — AP ${escOL(label)}", "${sub}")`,
+    `kb = Query("get_workflow_kanban", {id: ${workflowId}}, {stages: []})`,
+    `board = WorkflowKanban(kb)`,
+  ].join("\n");
+}
+
+function buildGanttOpenui(workflowId: number, label: string, name?: string): string {
+  const sub = name ? escOL(name) : "Cronograma ao vivo · barras por prazo, clique pra editar";
+  return [
+    `root = Card([header, gantt])`,
+    `header = CardHeader("Cronograma — AP ${escOL(label)}", "${sub}")`,
+    `g = Query("get_workflow_gantt", {workflow_id: ${workflowId}}, {rows: []})`,
+    `gantt = WorkflowGantt(g)`,
+  ].join("\n");
+}
+
+// Monta um Response SSE idêntico ao do /api/chat (1 chunk de content + DONE),
+// pro runtime consumir como se viesse do servidor — porém sem rede/LLM.
+function syntheticSse(content: string): Response {
+  const enc = new TextEncoder();
+  const chunk = (delta: Record<string, unknown>, finish: string | null) =>
+    enc.encode(
+      `data: ${JSON.stringify({
+        id: `chatcmpl-local-${crypto.randomUUID()}`,
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta, finish_reason: finish }],
+      })}\n\n`,
+    );
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(chunk({ content }, null));
+      controller.enqueue(chunk({}, "stop"));
+      controller.enqueue(enc.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+  });
+}
+
+// Tenta resolver o atalho de visão de workflow (kanban OU gantt). Retorna um
+// Response SSE (renderiza sem LLM) ou null (cai no fluxo normal /api/chat).
+// Determinístico: o openui-lang é fixo, então não gastamos turno de LLM (que
+// ainda por cima é inconsistente — às vezes nem re-renderiza). Nunca lança.
+async function tryWorkflowViewShortcut(text: string): Promise<Response | null> {
+  if (!text) return null;
+  const isGantt = OPEN_GANTT_INTENT.test(text);
+  const isKanban = !isGantt && OPEN_KANBAN_INTENT.test(text);
+  if (!isGantt && !isKanban) return null;
+  const m = text.match(AP_LABEL);
+  const label = m?.[1] ?? m?.[2];
+  let workflowId: number | undefined;
+  let resolvedName: string | undefined;
+  let shownLabel = label;
+  try {
+    if (label) {
+      const res = await resolveWorkflowIdByLabel(label);
+      if (res) {
+        workflowId = res.id;
+        resolvedName = res.name;
+      }
+    } else {
+      // Sem AP no texto ("abra o kanban") → usa o workflow já em contexto.
+      const ctx = getKanbanCtx().workflowId;
+      if (ctx != null) {
+        workflowId = ctx;
+        shownLabel = String(ctx);
+      }
+    }
+  } catch {
+    return null;
+  }
+  if (workflowId == null) return null; // não deu pra resolver → deixa o agente
+  const lbl = shownLabel ?? String(workflowId);
+  const content = isGantt
+    ? buildGanttOpenui(workflowId, lbl, resolvedName)
+    : buildKanbanOpenui(workflowId, lbl, resolvedName);
+  return syntheticSse(content);
+}
+
 // Restaura o chat ao recarregar a página. O backend (state.db do Hermes) guarda
 // as mensagens por sessão `waves-user-<id>::<thread>`; aqui buscamos as do thread
 // ativo e semeamos o ChatProvider via `setMessages`. Independe da sidebar/lista
@@ -649,10 +757,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile, activeThreadId, tenantId]);
 
-  // Modo de reasoning: "low" (⚡ rápido) | "medium" (🧠 aprofundado). Vira o
-  // header X-Hermes-Reasoning-Effort no /api/chat. NOTA: usamos "low" e não
-  // "none" no rápido — sem reasoning o gpt-5.4 SE ENROLA em perguntas complexas
-  // (4-5 turnos vs 1), ficando mais lento. "low" mantém o planejamento mínimo.
+  // Modo de reasoning: "low" (⚡ Rápido, padrão) | "medium" (🧠 Aprofundado). Vira
+  // o header X-Hermes-Reasoning-Effort no /api/chat. Padrão "low" prioriza
+  // latência (bom pra geração de UI direta); "medium" aprofunda a análise.
   const [reasoningMode, setReasoningMode] = useState<"low" | "medium">(() => {
     if (typeof window === "undefined") return "low";
     const v = window.localStorage.getItem(`waves-reasoning-${loadActiveProfileId()}`);
@@ -792,10 +899,22 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         const attachments = attachmentsRef.current;
         attachmentsRef.current = [];
 
+        const lastMsg = messages[messages.length - 1];
+
+        // Atalho determinístico de kanban: "abrir kanban do AP X" → renderiza o
+        // board SEM LLM (resolve workflow_id client-side, devolve SSE sintético).
+        // Cobre composer E followUp (ambos passam por este transport). Só dispara
+        // quando NÃO há anexos; se não resolver, cai no /api/chat normal abaixo.
+        if (lastMsg?.role === "user" && lastMsg.content != null && !attachments.length) {
+          const userText =
+            typeof lastMsg.content === "string" ? lastMsg.content : String(lastMsg.content);
+          const shortcut = await tryWorkflowViewShortcut(userText.trim());
+          if (shortcut) return shortcut;
+        }
+
         // Guarda a requisição exata (follow-up, composer, etc.) para retomar após
         // queda de rede — ThreadErrorRecovery lê e chama processMessage de novo.
         const threadKey = `${threadKeyPrefix}${activeThreadId}`;
-        const lastMsg = messages[messages.length - 1];
         if (lastMsg?.role === "user" && lastMsg.content != null) {
           const raw =
             typeof lastMsg.content === "string"

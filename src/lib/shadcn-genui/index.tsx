@@ -78,6 +78,7 @@ import { Stack } from "./components/stack";
 // quando pedido for "kanban", "board", "agrupar por stage".
 import { Kanban, KanbanCard, KanbanColumn } from "./components/kanban";
 import { WorkflowKanban } from "./components/workflow-kanban";
+import { WorkflowGantt } from "./components/workflow-gantt";
 import { TaskList } from "./components/task-list";
 import { ProjectOverview } from "./components/project-overview";
 
@@ -101,6 +102,7 @@ const ChatCardChildUnion = z.union([
   Stack.ref,
   Kanban.ref,
   WorkflowKanban.ref,
+  WorkflowGantt.ref,
   Collapsible.ref,
   List.ref,
   Steps.ref,
@@ -259,9 +261,10 @@ export const shadcnComponentGroups: ComponentGroup[] = [
   },
   {
     name: "Kanban / Lista de tasks / Visão agregada (data-driven via Query)",
-    components: ["WorkflowKanban", "TaskList", "ProjectOverview"],
+    components: ["WorkflowKanban", "WorkflowGantt", "TaskList", "ProjectOverview"],
     notes: [
       '- 🔑 KANBAN de workflow: SEMPRE `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca; o componente monta colunas/cards/drag/edição/"+ Nova".',
+      '- 🔑 CRONOGRAMA / linha do tempo / Gantt de um AP: SEMPRE `g = Query("get_workflow_gantt", {workflow_id: <id>}, {rows: []})` + `gantt = WorkflowGantt(g)`. O RUNTIME lista as tasks e hidrata as datas (start_date→due_date); tarefa sem prazo vira marco. NÃO monte barras à mão nem chame tools de data.',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
       '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
       "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks/statistics) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
@@ -497,6 +500,7 @@ export const shadcnChatLibrary = createLibrary({
     KanbanColumn,
     KanbanCard,
     WorkflowKanban,
+    WorkflowGantt,
     TaskList,
     ProjectOverview,
     // Collapsible (bloco único colapsável)

@@ -256,8 +256,8 @@ export function ChatComposer({
               aria-pressed={reasoningMode === "medium"}
               title={
                 reasoningMode === "medium"
-                  ? "Modo aprofundado: análise mais profunda, porém mais lenta. Clique p/ rápido."
-                  : "Modo rápido: respostas ágeis. Clique p/ análise aprofundada."
+                  ? "Modo aprofundado: análise mais elaborada, pode demorar mais. Clique p/ rápido."
+                  : "Modo rápido: respostas ágeis pro dia a dia. Clique p/ aprofundar."
               }
               onClick={onToggleReasoning}
             >

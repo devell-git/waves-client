@@ -239,6 +239,119 @@ async function aggregateTasksByResponsible(
   return result;
 }
 
+// ── Gantt de workflow (sintético): lista tasks + hidrata datas via detalhe ──
+// As datas (start_date/due_date/done_date) NÃO vêm na listagem nem no kanban —
+// só no detalhe (get_task). Então listamos as tasks (1 call) e hidratamos as
+// datas por task no detalhe (máx 3 em paralelo, 429-safe). Cacheado. Tudo no
+// runtime, SEM LLM. Tasks sem due/done → o componente vira marco (milestone).
+const ganttCache = new Map<string, { at: number; data: unknown }>();
+
+async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<unknown> {
+  const wid = num(args.workflow_id ?? args.id);
+  if (!wid) return { workflow_id: 0, rows: [] };
+  const ck = `gantt:${wid}`;
+  const hit = ganttCache.get(ck);
+  if (hit && Date.now() - hit.at < RESULT_TTL_MS) return hit.data;
+
+  const listResp = (await rawGet(
+    `/openui/tools/tasks?workflow_id=${wid}&per_page=100`,
+  )) as Record<string, unknown>;
+  const ld = (listResp?.data ?? listResp) as Record<string, unknown>;
+  const rawList = (ld?.rows ?? ld?.tasks ?? ld?.data ?? (Array.isArray(ld) ? ld : [])) as Array<
+    Record<string, unknown>
+  >;
+  const base = (Array.isArray(rawList) ? rawList : [])
+    .map((t) => {
+      const resp = t.responsible as Record<string, unknown> | string | undefined;
+      const responsible =
+        typeof resp === "string" ? resp : resp && typeof resp === "object" ? String(resp.name ?? "") : "";
+      return {
+        id: num(t.id),
+        title: String(t.title ?? t.name ?? "(sem título)"),
+        progress: num(t.progress),
+        created_at: (t.created_at as string) ?? null,
+        responsible,
+      };
+    })
+    .filter((t) => t.id > 0);
+
+  const rows = await mapLimit(base, 3, async (t) => {
+    try {
+      // Detalhe COMPLETO (/tasks/{id}) — traz start_date/due_date/done_date.
+      // O endpoint /openui/tools/tasks/show é trimado e NÃO devolve as datas.
+      const dResp = (await rawGet(`/tasks/${t.id}`)) as Record<string, unknown>;
+      let d = (dResp?.data ?? dResp) as Record<string, unknown>;
+      d = (d?.task as Record<string, unknown>) ?? d;
+      // Mantém o TIMESTAMP completo (não trunca p/ dia): o componente precisa do
+      // instante pra "atrasada" bater com a plataforma (due_date < agora).
+      const firstDate = (keys: string[]): string | null => {
+        for (const k of keys) {
+          const v = d[k];
+          if (v != null && v !== "") return String(v);
+        }
+        return null;
+      };
+      const status = d.status;
+      return {
+        ...t,
+        status: typeof status === "string" ? status : status != null ? String(status) : "",
+        start_date: firstDate(["start_date", "started_at", "started_on", "begin_date"]),
+        due_date: firstDate(["due_date", "due_at"]),
+        done_date: firstDate(["done_date", "completed_at", "finished_at", "done_at", "completed_on"]),
+      };
+    } catch {
+      return { ...t, status: "", start_date: null, due_date: null, done_date: null };
+    }
+  });
+
+  const result = { workflow_id: wid, rows };
+  ganttCache.set(ck, { at: Date.now(), data: result });
+  return result;
+}
+
+// ── Resolução AP→workflow_id (pro atalho determinístico de "abrir kanban") ──
+// Lista de workflows (id+name) cacheada no cliente. 1 GET barato, SEM LLM.
+let wfListCache: { at: number; list: Array<{ id: number; name: string }> } | null = null;
+
+async function getWorkflowList(): Promise<Array<{ id: number; name: string }>> {
+  if (wfListCache && Date.now() - wfListCache.at < RESULT_TTL_MS) return wfListCache.list;
+  const wfResp = (await rawGet("/openui/tools/workflows?per_page=100")) as Record<string, unknown>;
+  const d = (wfResp?.data ?? wfResp) as Record<string, unknown>;
+  const rawList = (d?.rows ?? d?.workflows ?? d?.data ?? (Array.isArray(d) ? d : [])) as Array<
+    Record<string, unknown>
+  >;
+  const list = (Array.isArray(rawList) ? rawList : [])
+    .map((w) => ({ id: num(w.id), name: String(w.name ?? w.title ?? `Workflow ${w.id}`) }))
+    .filter((w) => w.id > 0);
+  if (list.length) wfListCache = { at: Date.now(), list };
+  return list;
+}
+
+/**
+ * Resolve um rótulo de AP (ex.: "1", "6.4") pro workflow_id numérico, casando
+ * pelo número no INÍCIO do nome do workflow ("6.4 — ...") ou por "AP 6.4". Usa
+ * a lista cacheada — 1 GET no máx., SEM LLM. Retorna {id, name} ou null se não
+ * houver match determinístico (aí o chamador cai no fluxo normal do agente).
+ */
+export async function resolveWorkflowIdByLabel(
+  label: string,
+): Promise<{ id: number; name: string } | null> {
+  const want = String(label).trim();
+  if (!want) return null;
+  const esc = want.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Número no início do nome, seguido de não-dígito (evita "1" casar "10"/"1.5").
+  const startRe = new RegExp(`^\\s*(?:ap\\s*)?0*${esc}(?![\\d.])`, "i");
+  // Ou "AP 6.4" em qualquer ponto do nome.
+  const apRe = new RegExp(`\\bap\\s*0*${esc}(?![\\d.])`, "i");
+  let list: Array<{ id: number; name: string }>;
+  try {
+    list = await getWorkflowList();
+  } catch {
+    return null;
+  }
+  return list.find((w) => startRe.test(w.name)) ?? list.find((w) => apRe.test(w.name)) ?? null;
+}
+
 let providerCache: ToolProvider | null = null;
 let loading: Promise<ToolProvider> | null = null;
 
@@ -253,6 +366,7 @@ async function build(): Promise<ToolProvider> {
   // Tools sintéticas de agregação (não estão na spec — feitas no runtime).
   map["get_project_overview"] = (args) => aggregateProjectOverview(args ?? {});
   map["get_tasks_by_responsible"] = (args) => aggregateTasksByResponsible(args ?? {});
+  map["get_workflow_gantt"] = (args) => aggregateWorkflowGantt(args ?? {});
   return map;
 }
 

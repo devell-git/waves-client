@@ -509,6 +509,10 @@ interface ChatRequestBody {
    * legacy (`waves-user-1` ou `waves-anon` flat).
    */
   threadId?: string;
+  /** Esforço de reasoning do modelo p/ esta conversa: "none" (rápido) ou
+   *  "medium" (aprofundado). Vira o header X-Hermes-Reasoning-Effort. Ausente =
+   *  usa o reasoning_effort do config.yaml do profile. */
+  reasoningEffort?: string;
   wavesSession?: WavesSession;
   defaultWorkflowId?: number;
   persona?: string | null;
@@ -912,6 +916,7 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
       baseURL: gw.baseURL,
       messages,
       threadId: body.threadId,
+      reasoningEffort: body.reasoningEffort,
       scopeContext,
       user: body.user,
       wavesSession,
@@ -1351,6 +1356,8 @@ interface HandleHermesOptions {
    * pro Hermes — habilita múltiplas conversas paralelas por user.
    */
   threadId?: string;
+  /** Override de reasoning_effort → header X-Hermes-Reasoning-Effort. */
+  reasoningEffort?: string;
   /**
    * ID do profile Hermes resolvido (gw.id). Usado pelo hard path pra gravar o
    * token do usuário na pasta do PRÓPRIO profile (não vaza token entre profiles).
@@ -1430,7 +1437,7 @@ function truncateOldAssistantUI(
 async function handleChatRequestHermes(
   opts: HandleHermesOptions,
 ): Promise<Response> {
-  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, profileId, wantUsage } = opts;
+  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, reasoningEffort, profileId, wantUsage } = opts;
 
   const t0 = Date.now();
   const elapsed = () => `${Date.now() - t0}ms`;
@@ -1611,6 +1618,7 @@ async function handleChatRequestHermes(
                 "Content-Type": "application/json",
                 Accept: "text/event-stream",
                 "X-Hermes-Session-Id": sessionId,
+                ...(reasoningEffort ? { "X-Hermes-Reasoning-Effort": reasoningEffort } : {}),
               },
               body: JSON.stringify({
                 model: process.env.HERMES_MODEL || "hermes-agent",

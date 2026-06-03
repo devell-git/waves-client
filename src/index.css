@@ -2648,3 +2648,26 @@ a {
     width: 100%;
   }
 }
+
+/* Toggle de reasoning no composer (ao lado do +) */
+.waves-composer__reasoning-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--muted-foreground, #6b7280);
+  background: transparent;
+  border: 1px solid var(--legacy-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+.waves-composer__reasoning-button:hover { border-color: var(--muted-foreground); }
+.waves-composer__reasoning-button[aria-pressed="true"] {
+  color: var(--legacy-primary, #2563eb);
+  border-color: var(--legacy-primary, #2563eb);
+  background: color-mix(in srgb, var(--legacy-primary, #2563eb) 10%, transparent);
+}
