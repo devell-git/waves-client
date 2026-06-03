@@ -108,7 +108,9 @@ export async function getTaskForEdit(taskId: number | string): Promise<TaskEditD
     visibleToUserIds: vis.map((u) => Number(u.id)).filter((n) => Number.isFinite(n)),
     dueDate: due ? String(due).slice(0, 10) : null,
     startedAt: asDate(pick(t, ["started_at", "start_date", "started_on", "begin_date"])),
-    completedAt: asDate(pick(t, ["completed_at", "finished_at", "done_at", "completed_on"])),
+    // "Concluído" = done_date (a data de conclusão real da plataforma). NÃO usar
+    // completed_at (campo de aprovação/etapa) — mostrava data mesmo sem conclusão.
+    completedAt: asDate(pick(t, ["done_date", "done_at", "finished_at"])),
     checklist: parseChecklist(t),
   };
 }

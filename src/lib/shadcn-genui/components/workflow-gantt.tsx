@@ -81,10 +81,11 @@ function mapRows(data: unknown): { workflowId?: number; tasks: GTask[]; undated:
     const doneAt = toDate(r.done_date);
     const name = r.title || `#${r.id}`;
     const status = String(r.status ?? "");
-    // Concluída se TEM data de conclusão (done_date) OU status de conclusão.
-    // O done_date prevalece: tarefa com "Concluído" preenchido está pronta,
-    // mesmo que o status na plataforma não tenha sido atualizado.
-    const done = doneAt != null || DONE_STATUS.test(status);
+    // Concluída = TEM done_date (a "data de conclusão" real da plataforma).
+    // NÃO usamos status nem completed_at: uma task pode ter status "completed"
+    // ou completed_at setado sem done_date e a plataforma a mostra SEM data de
+    // conclusão (não concluída de fato).
+    const done = doneAt != null;
     const canceled = CANCEL_STATUS.test(status);
     // Fim da barra = SEMPRE o prazo (a "data final" planejada). Concluir antes
     // não encurta a barra — só pinta de verde. Se não houver prazo, cai no
@@ -136,7 +137,6 @@ function fmt(d: Date): string {
 // Critério de status ALINHADO À PLATAFORMA. O `status` vem de /tasks/{id}.
 // "concluída" = só status de conclusão (NÃO done_date — a plataforma mostra
 // "Concluídas: 0" mesmo com completed_at setado; "approved" ≠ concluída).
-const DONE_STATUS = /^(conclu|done|complet|finish|encerr|fechad|deliver)/i;
 const CANCEL_STATUS = /^(cancel|rejeit|arquiv|descart)/i;
 
 // Paleta por STATUS (informativa). Classes literais (Tailwind JIT precisa ver

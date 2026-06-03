@@ -297,7 +297,10 @@ async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<un
         status: typeof status === "string" ? status : status != null ? String(status) : "",
         start_date: firstDate(["start_date", "started_at", "started_on", "begin_date"]),
         due_date: firstDate(["due_date", "due_at"]),
-        done_date: firstDate(["done_date", "completed_at", "finished_at", "done_at", "completed_on"]),
+        // SÓ done_date (a "data de conclusão" que a plataforma mostra). NÃO usar
+        // completed_at: é outro campo (aprovação/etapa) que pode estar setado sem
+        // a task estar concluída — marcava task como done indevidamente.
+        done_date: firstDate(["done_date", "done_at", "finished_at"]),
       };
     } catch {
       return { ...t, status: "", start_date: null, due_date: null, done_date: null };

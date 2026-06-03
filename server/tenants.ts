@@ -55,12 +55,18 @@ export interface Tenant {
   /** X-API-KEY do tenant. */
   key: string;
   hosts: string[];
+  /** Subpath onde o app é servido (ex.: "/waves-client/"); "/" se na raiz. */
+  path: string;
   branding: TenantBranding;
 }
 
 interface TenantEntry {
   tenant: string;
+  /** Aceita `hosts` (array) OU `host` (string única) — são unificados. */
   hosts?: string[];
+  host?: string;
+  /** Subpath onde o app é servido (ex.: "/waves-client/"). */
+  path?: string;
   api_url: string;
   api_key?: string;
   logo_white?: string;
@@ -87,12 +93,21 @@ function toTenant(e: TenantEntry): Tenant {
   const url = (e.api_url ?? "").trim().replace(/\/+$/, "");
   // Base WEB = api_url sem o sufixo /api (ex.: .../api → ...).
   const webUrl = url.replace(/\/api$/i, "");
+  // Unifica `hosts` (array) + `host` (string única) → lista normalizada.
+  const hosts = [...(e.hosts ?? []), ...(e.host ? [e.host] : [])]
+    .map((h) => normalizeHost(h))
+    .filter(Boolean);
+  // path normalizado: garante barras nas pontas ("/waves-client/"); raiz = "/".
+  const path = e.path?.trim()
+    ? `/${e.path.trim().replace(/^\/+|\/+$/g, "")}/`
+    : "/";
   return {
     id: e.tenant,
     url,
     // api_key opcional → fallback pra WAVES_TOKEN (migração mono-key).
     key: (e.api_key ?? process.env.WAVES_TOKEN ?? "").trim(),
-    hosts: (e.hosts ?? []).map((h) => normalizeHost(h)).filter(Boolean),
+    hosts,
+    path,
     branding: {
       tenant: e.tenant,
       logo_white: e.logo_white,
@@ -144,7 +159,7 @@ function legacyTenant(): Tenant {
     ""
   ).replace(/\/+$/, "");
   const key = process.env.WAVES_TOKEN?.trim() || process.env.WAVES_PROD_TOKEN?.trim() || "";
-  return { id: "default", url, key, hosts: [], branding: { tenant: "default" } };
+  return { id: "default", url, key, hosts: [], path: "/", branding: { tenant: "default" } };
 }
 
 /** Resolve o tenant pelo Host do request. `null` se nenhum atender o host. */
