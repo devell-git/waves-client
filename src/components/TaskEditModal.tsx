@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
+import { loadSession } from "../lib/session";
+import { isAdminUser } from "../lib/permissions";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +88,19 @@ export function TaskEditModal({
   const [members, setMembers] = useState<Member[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [orig, setOrig] = useState<TaskEditData | null>(null);
+
+  // edit-own: o detalhe NÃO traz can_edit (só o kanban). Derivamos: admin edita
+  // tudo; demais só se forem responsável OU criador da task. A API é a guarda
+  // real (403 no salvar), mas isto deixa o modal já em modo leitura sem tentar.
+  const canEdit = useMemo(() => {
+    if (!orig) return true;
+    const s = loadSession();
+    if (!s) return true;
+    if (isAdminUser(s.roles, s.user?.type)) return true;
+    const uid = s.user?.id;
+    return (orig.assignedTo != null && orig.assignedTo === uid) ||
+      (orig.createdBy != null && orig.createdBy === uid);
+  }, [orig]);
 
   // Campos editáveis
   const [title, setTitle] = useState("");
@@ -187,9 +202,14 @@ export function TaskEditModal({
     <Dialog open={taskId != null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Editar tarefa{orig ? ` #${orig.id}` : ""}</DialogTitle>
+          <DialogTitle>
+            {orig && !canEdit ? "Visualizar tarefa" : "Editar tarefa"}
+            {orig ? ` #${orig.id}` : ""}
+          </DialogTitle>
           <DialogDescription>
-            Dados carregados direto da Waves. Mude só o que precisar e salve.
+            {orig && !canEdit
+              ? "Você não é responsável por esta tarefa — somente leitura."
+              : "Dados carregados direto da Waves. Mude só o que precisar e salve."}
           </DialogDescription>
         </DialogHeader>
 
@@ -199,6 +219,15 @@ export function TaskEditModal({
           <div className="py-6 text-center text-sm text-destructive">{error}</div>
         ) : (
           <div className="space-y-4 py-2">
+            {orig && !canEdit && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                🔒 Você só pode <strong>visualizar</strong> esta tarefa — sem permissão pra editar.
+              </div>
+            )}
+            <fieldset
+              disabled={!!orig && !canEdit}
+              className="m-0 space-y-4 border-0 p-0 disabled:cursor-not-allowed disabled:opacity-70"
+            >
             <Field label="Título">
               <input
                 className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -301,17 +330,20 @@ export function TaskEditModal({
               </Collapsible>
             )}
 
+            </fieldset>
             {error && <div className="text-sm text-destructive">{error}</div>}
           </div>
         )}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancelar
+            {orig && !canEdit ? "Fechar" : "Cancelar"}
           </Button>
-          <Button onClick={handleSave} disabled={loading || saving || !orig}>
-            {saving ? "Salvando…" : "Salvar alterações"}
-          </Button>
+          {(!orig || canEdit) && (
+            <Button onClick={handleSave} disabled={loading || saving || !orig}>
+              {saving ? "Salvando…" : "Salvar alterações"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

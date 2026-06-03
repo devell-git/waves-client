@@ -35,6 +35,9 @@ interface CardModel {
   progress?: number;
   badges: string[];
   tags: string[];
+  /** can_edit da plataforma (vem no payload do kanban). false = só leitura →
+   *  não arrasta (mover = editar). Clicar abre o modal em modo Visualizar. */
+  canEdit: boolean;
 }
 interface ColModel {
   stageId?: number;
@@ -65,6 +68,7 @@ function mapTask(t: Record<string, unknown>): CardModel {
     progress,
     badges: badge ? [String(badge)] : [],
     tags: taskType?.name ? [String(taskType.name)] : [],
+    canEdit: pick(t, ["can_edit"]) !== false,
   };
 }
 
@@ -222,7 +226,7 @@ export const WorkflowKanban = defineComponent({
                         <CardView
                           key={card.id ?? idx}
                           card={card}
-                          draggable={card.id != null}
+                          draggable={card.id != null && card.canEdit}
                         />
                       ))}
                   </>

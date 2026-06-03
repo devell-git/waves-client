@@ -28,6 +28,9 @@ export interface TaskEditData {
   startedAt: string | null; // YYYY-MM-DD (exibição)
   completedAt: string | null; // YYYY-MM-DD (exibição)
   checklist: ChecklistItem[];
+  /** Criador (pra derivar edit-own junto com assignedTo — o detalhe NÃO traz
+   *  can_edit; ele só vem no payload do kanban). */
+  createdBy: number | null;
 }
 export interface Member {
   id: number;
@@ -112,6 +115,7 @@ export async function getTaskForEdit(taskId: number | string): Promise<TaskEditD
     // completed_at (campo de aprovação/etapa) — mostrava data mesmo sem conclusão.
     completedAt: asDate(pick(t, ["done_date", "done_at", "finished_at"])),
     checklist: parseChecklist(t),
+    createdBy: t.created_by != null ? Number(t.created_by) : null,
   };
 }
 

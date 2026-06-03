@@ -244,14 +244,16 @@ async function aggregateTasksByResponsible(
 // só no detalhe (get_task). Então listamos as tasks (1 call) e hidratamos as
 // datas por task no detalhe (máx 3 em paralelo, 429-safe). Cacheado. Tudo no
 // runtime, SEM LLM. Tasks sem due/done → o componente vira marco (milestone).
-const ganttCache = new Map<string, { at: number; data: unknown }>();
+const tasksCache = new Map<string, { at: number; rows: unknown[] }>();
 
-async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<unknown> {
-  const wid = num(args.workflow_id ?? args.id);
-  if (!wid) return { workflow_id: 0, rows: [] };
-  const ck = `gantt:${wid}`;
-  const hit = ganttCache.get(ck);
-  if (hit && Date.now() - hit.at < RESULT_TTL_MS) return hit.data;
+// Tasks de um workflow com datas hidratadas (start/due/done), status, tipo e
+// responsável. Lista (1 call) + detalhe por task (/tasks/{id}, máx 3 paralelo,
+// 429-safe). Cacheado por workflow. Base COMPARTILHADA: Gantt, Saúde do
+// cronograma e os demais relatórios consomem isto (uma hidratação só).
+async function loadWorkflowTasks(wid: number): Promise<unknown[]> {
+  const ck = `tasks:${wid}`;
+  const hit = tasksCache.get(ck);
+  if (hit && Date.now() - hit.at < RESULT_TTL_MS) return hit.rows;
 
   const listResp = (await rawGet(
     `/openui/tools/tasks?workflow_id=${wid}&per_page=100`,
@@ -265,12 +267,16 @@ async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<un
       const resp = t.responsible as Record<string, unknown> | string | undefined;
       const responsible =
         typeof resp === "string" ? resp : resp && typeof resp === "object" ? String(resp.name ?? "") : "";
+      const tt = t.task_type as Record<string, unknown> | string | undefined;
+      const type =
+        typeof tt === "string" ? tt : tt && typeof tt === "object" ? String(tt.name ?? "") : "";
       return {
         id: num(t.id),
         title: String(t.title ?? t.name ?? "(sem título)"),
         progress: num(t.progress),
         created_at: (t.created_at as string) ?? null,
         responsible,
+        type,
       };
     })
     .filter((t) => t.id > 0);
@@ -307,9 +313,22 @@ async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<un
     }
   });
 
-  const result = { workflow_id: wid, rows };
-  ganttCache.set(ck, { at: Date.now(), data: result });
-  return result;
+  tasksCache.set(ck, { at: Date.now(), rows });
+  return rows;
+}
+
+async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<unknown> {
+  const wid = num(args.workflow_id ?? args.id);
+  if (!wid) return { workflow_id: 0, rows: [] };
+  return { workflow_id: wid, rows: await loadWorkflowTasks(wid) };
+}
+
+// Saúde do cronograma: mesma base de tasks; o componente computa esperado×real,
+// desvio e classificação. Tool = data-fetcher (compartilha cache do Gantt).
+async function aggregateScheduleHealth(args: Record<string, unknown>): Promise<unknown> {
+  const wid = num(args.workflow_id ?? args.id);
+  if (!wid) return { workflow_id: 0, rows: [] };
+  return { workflow_id: wid, rows: await loadWorkflowTasks(wid) };
 }
 
 // ── Resolução AP→workflow_id (pro atalho determinístico de "abrir kanban") ──
@@ -370,6 +389,7 @@ async function build(): Promise<ToolProvider> {
   map["get_project_overview"] = (args) => aggregateProjectOverview(args ?? {});
   map["get_tasks_by_responsible"] = (args) => aggregateTasksByResponsible(args ?? {});
   map["get_workflow_gantt"] = (args) => aggregateWorkflowGantt(args ?? {});
+  map["get_schedule_health"] = (args) => aggregateScheduleHealth(args ?? {});
   return map;
 }
 
