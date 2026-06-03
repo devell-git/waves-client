@@ -80,6 +80,8 @@ import { Kanban, KanbanCard, KanbanColumn } from "./components/kanban";
 import { WorkflowKanban } from "./components/workflow-kanban";
 import { WorkflowGantt } from "./components/workflow-gantt";
 import { ScheduleHealthReport } from "./components/schedule-health-report";
+import { PendingCriticalReport } from "./components/pending-critical-report";
+import { ResponsibilityLoadReport } from "./components/responsibility-load-report";
 import { TaskList } from "./components/task-list";
 import { ProjectOverview } from "./components/project-overview";
 
@@ -105,6 +107,8 @@ const ChatCardChildUnion = z.union([
   WorkflowKanban.ref,
   WorkflowGantt.ref,
   ScheduleHealthReport.ref,
+  PendingCriticalReport.ref,
+  ResponsibilityLoadReport.ref,
   Collapsible.ref,
   List.ref,
   Steps.ref,
@@ -263,11 +267,13 @@ export const shadcnComponentGroups: ComponentGroup[] = [
   },
   {
     name: "Kanban / Lista de tasks / Visão agregada (data-driven via Query)",
-    components: ["WorkflowKanban", "WorkflowGantt", "ScheduleHealthReport", "TaskList", "ProjectOverview"],
+    components: ["WorkflowKanban", "WorkflowGantt", "ScheduleHealthReport", "PendingCriticalReport", "ResponsibilityLoadReport", "TaskList", "ProjectOverview"],
     notes: [
       '- 🔑 KANBAN de workflow: SEMPRE `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca; o componente monta colunas/cards/drag/edição/"+ Nova".',
       '- 🔑 CRONOGRAMA / linha do tempo / Gantt de um AP: SEMPRE `g = Query("get_workflow_gantt", {workflow_id: <id>}, {rows: []})` + `gantt = WorkflowGantt(g)`. O RUNTIME lista as tasks e hidrata as datas (start_date→due_date); tarefa sem prazo vira marco. NÃO monte barras à mão nem chame tools de data.',
       '- 🔑 SAÚDE DO CRONOGRAMA / avanço esperado vs real / desvio de um AP: SEMPRE `h = Query("get_schedule_health", {workflow_id: <id>}, {rows: []})` + `rep = ScheduleHealthReport(h)`. O RUNTIME compara % esperado (tempo decorrido) vs % real (progress), classifica saúde e monta cards + leitura executiva + tabela. NÃO calcule você mesmo nem monte a tabela à mão.',
+      '- 🔑 PENDÊNCIAS CRÍTICAS / bloqueios / "o que está travado" de um AP: SEMPRE `p = Query("get_pending_critical", {workflow_id: <id>}, {rows: []})` + `rep = PendingCriticalReport(p)`. O RUNTIME filtra vencidas/sem responsável/sem prazo/paradas/aguardando dependência e monta cards + leitura executiva + tabela acionável. NÃO filtre você mesmo nem monte a tabela à mão.',
+      '- 🔑 CARGA / RESPONSABILIDADE / distribuição por responsável de um AP: SEMPRE `c = Query("get_responsibility_load", {workflow_id: <id>}, {rows: []})` + `rep = ResponsibilityLoadReport(c)`. O RUNTIME agrupa por pessoa (total/seguras/atenção/críticas/vencendo em 7d/% médio/risco/observação). NÃO agrupe você mesmo nem monte a tabela à mão.',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
       '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
       "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks/statistics) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
@@ -505,6 +511,8 @@ export const shadcnChatLibrary = createLibrary({
     WorkflowKanban,
     WorkflowGantt,
     ScheduleHealthReport,
+    PendingCriticalReport,
+    ResponsibilityLoadReport,
     TaskList,
     ProjectOverview,
     // Collapsible (bloco único colapsável)

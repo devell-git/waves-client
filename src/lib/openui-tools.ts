@@ -301,6 +301,8 @@ async function loadWorkflowTasks(wid: number): Promise<unknown[]> {
       return {
         ...t,
         status: typeof status === "string" ? status : status != null ? String(status) : "",
+        assigned_to: d.assigned_to != null ? num(d.assigned_to) : null,
+        depends_on: d.depends_on_task_id != null ? num(d.depends_on_task_id) : null,
         start_date: firstDate(["start_date", "started_at", "started_on", "begin_date"]),
         due_date: firstDate(["due_date", "due_at"]),
         // SÓ done_date (a "data de conclusão" que a plataforma mostra). NÃO usar
@@ -309,7 +311,7 @@ async function loadWorkflowTasks(wid: number): Promise<unknown[]> {
         done_date: firstDate(["done_date", "done_at", "finished_at"]),
       };
     } catch {
-      return { ...t, status: "", start_date: null, due_date: null, done_date: null };
+      return { ...t, status: "", assigned_to: null, depends_on: null, start_date: null, due_date: null, done_date: null };
     }
   });
 
@@ -326,6 +328,22 @@ async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<un
 // Saúde do cronograma: mesma base de tasks; o componente computa esperado×real,
 // desvio e classificação. Tool = data-fetcher (compartilha cache do Gantt).
 async function aggregateScheduleHealth(args: Record<string, unknown>): Promise<unknown> {
+  const wid = num(args.workflow_id ?? args.id);
+  if (!wid) return { workflow_id: 0, rows: [] };
+  return { workflow_id: wid, rows: await loadWorkflowTasks(wid) };
+}
+
+// Pendências críticas: mesma base; o componente filtra e classifica bloqueios
+// (vencida, sem responsável, sem prazo, parada, aguardando dependência).
+async function aggregatePendingCritical(args: Record<string, unknown>): Promise<unknown> {
+  const wid = num(args.workflow_id ?? args.id);
+  if (!wid) return { workflow_id: 0, rows: [] };
+  return { workflow_id: wid, rows: await loadWorkflowTasks(wid) };
+}
+
+// Carga por responsável: mesma base; o componente agrupa por pessoa e computa
+// total/seguras/atenção/críticas/vencendo/% médio/risco.
+async function aggregateResponsibilityLoad(args: Record<string, unknown>): Promise<unknown> {
   const wid = num(args.workflow_id ?? args.id);
   if (!wid) return { workflow_id: 0, rows: [] };
   return { workflow_id: wid, rows: await loadWorkflowTasks(wid) };
@@ -390,6 +408,8 @@ async function build(): Promise<ToolProvider> {
   map["get_tasks_by_responsible"] = (args) => aggregateTasksByResponsible(args ?? {});
   map["get_workflow_gantt"] = (args) => aggregateWorkflowGantt(args ?? {});
   map["get_schedule_health"] = (args) => aggregateScheduleHealth(args ?? {});
+  map["get_pending_critical"] = (args) => aggregatePendingCritical(args ?? {});
+  map["get_responsibility_load"] = (args) => aggregateResponsibilityLoad(args ?? {});
   return map;
 }
 
