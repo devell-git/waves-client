@@ -86,7 +86,13 @@ function tenantsFilePath(): string {
 }
 
 function normalizeHost(host: string | undefined): string {
-  return (host ?? "").trim().toLowerCase().split(":")[0] ?? "";
+  let h = (host ?? "").trim().toLowerCase();
+  // Aceita entradas "sujas" no tenants.json (ex.: "http://69.164.216.83/waves-client/")
+  // OU header com porta ("host:3002") → extrai só o hostname.
+  h = h.replace(/^https?:\/\//, ""); // remove esquema
+  h = h.split("/")[0] ?? h; // remove path
+  h = h.split(":")[0] ?? h; // remove porta
+  return h.trim();
 }
 
 function toTenant(e: TenantEntry): Tenant {
@@ -148,6 +154,12 @@ function loadTenants(): Tenant[] {
       : [];
   const tenants = arr.filter((e) => e && e.tenant && e.api_url).map(toTenant);
   _fileCache = { mtimeMs, tenants };
+  // Diagnóstico (só quando o arquivo é (re)carregado): ajuda a depurar em prod
+  // se o tenant certo está sendo lido (host certo → branding certo).
+  console.log(
+    `[tenants] carregados de ${p}: ${tenants.length} → ` +
+      tenants.map((t) => `${t.id}[${t.hosts.join(",") || "sem-host"}]`).join(" | "),
+  );
   return tenants;
 }
 
