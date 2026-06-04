@@ -16,7 +16,7 @@ import { listProfiles } from "./profile-routing.js";
 import {
   getActiveTenant,
   getDefaultTenant,
-  getTenantBranding,
+  isTenantResolved,
   resolveTenantByHost,
   runWithTenant,
 } from "./tenants.js";
@@ -43,9 +43,10 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
 
 // Resolve o tenant pela ORIGEM da requisição (Host) e fixa no contexto (ALS)
-// pra todo o request. Sem match → tenant default. Assim os consumidores
-// (proxy /api/waves, openui-spec, waves-client) usam url/key/branding certos
-// sem precisar passar o host adiante.
+// pra todo o request. Sem match → UNRESOLVED (via getDefaultTenant, que só honra
+// DEFAULT_TENANT explícito) — NUNCA o 1º tenant nem WAVES_URL legado. Os
+// consumidores (proxy /api/waves, /api/tenant) checam isTenantResolved e falham
+// explicitamente em vez de servir a Waves/marca de outro tenant.
 app.use((req, _res, next) => {
   const host = (req.headers["x-forwarded-host"] as string) || req.headers.host;
   const tenant = resolveTenantByHost(host) ?? getDefaultTenant();
@@ -56,7 +57,13 @@ app.use((req, _res, next) => {
 // frontend (tela de login) consome antes de autenticar.
 app.get("/api/tenant", (_req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json(getTenantBranding());
+  const tenant = getActiveTenant();
+  // Host sem match → 404 (sem branding). NÃO devolve um default — o frontend
+  // cai no fallback de marca neutra em vez de exibir a marca de outro tenant.
+  if (!isTenantResolved(tenant)) {
+    return res.status(404).json({ error: "Nenhum tenant configurado para este host." });
+  }
+  res.json(tenant.branding);
 });
 
 app.get("/api/health", (_req, res) => {
@@ -92,9 +99,12 @@ app.get("/api/health", (_req, res) => {
 
 app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   const tenant = getActiveTenant();
-  if (!tenant.key || !tenant.url) {
-    return res.status(500).json({
-      error: `Tenant "${tenant.id}" sem url/key. Configure ACTIVE_TENANT + tenants.json (ou WAVES_URL/WAVES_TOKEN).`,
+  // Host sem tenant → 421 e PARA. Nunca encaminha pra uma Waves default/legacy
+  // (serviria dados do tenant errado). Ou o host bate num tenant, ou falha.
+  if (!isTenantResolved(tenant)) {
+    const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "?";
+    return res.status(421).json({
+      error: `Host "${host}" não está mapeado a nenhum tenant. Configure em .secrets/tenants.json.`,
     });
   }
   const upstreamPath = req.url.replace(/^\/api\/waves/, "") || "/";

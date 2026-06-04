@@ -52,6 +52,7 @@ import {
 import { JobProgressCard, parseCheckJob, stripJobMarker } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
+import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import { getKanbanCtx } from "../lib/kanban-context";
 import { loadShortcuts, saveShortcutExchange } from "../lib/shortcut-history";
 import {
@@ -690,6 +691,12 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
+  // Logos do tenant (do /api/tenant, resolvido por host). SEM fallback: ou o
+  // tenant tem logo, ou não renderiza nada — nunca um logo hardcoded de outro.
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
+  useEffect(() => {
+    fetchTenantBranding().then(setBranding);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1084,16 +1091,20 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
           <span aria-hidden="true">☰</span>
         </button>
         <div className="chat-shell-brand">
-          <img
-            src="https://devell.com.br/medias/logo-waves-azul.png"
-            alt="Waves"
-            className="chat-shell-logo chat-shell-logo-light"
-          />
-          <img
-            src="https://devell.com.br/medias/logo-waves-branco.png"
-            alt="Waves"
-            className="chat-shell-logo chat-shell-logo-dark"
-          />
+          {branding?.logo_dark && (
+            <img
+              src={branding.logo_dark}
+              alt={branding.tenant}
+              className="chat-shell-logo chat-shell-logo-light"
+            />
+          )}
+          {branding?.logo_white && (
+            <img
+              src={branding.logo_white}
+              alt={branding.tenant}
+              className="chat-shell-logo chat-shell-logo-dark"
+            />
+          )}
           <span className="chat-shell-meta" hidden>
             {session.user.name}
             {session.user.type ? ` · ${session.user.type}` : ""}
@@ -1149,7 +1160,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
               />
             )}
             <Shell.Container
-              logoUrl={mode === "dark" ? "/waves_white.png" : "/waves_blue.png"}
+              logoUrl={(mode === "dark" ? branding?.logo_white : branding?.logo_dark) ?? ""}
               agentName="Agent"
             >
               <Shell.SidebarContainer>

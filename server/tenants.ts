@@ -163,15 +163,22 @@ function loadTenants(): Tenant[] {
   return tenants;
 }
 
-/** Tenant legado (mono-tenant via WAVES_URL/WAVES_TOKEN) — último fallback. */
-function legacyTenant(): Tenant {
-  const url = (
-    process.env.WAVES_URL?.trim() ||
-    process.env.WAVES_PROD_URL?.trim() ||
-    ""
-  ).replace(/\/+$/, "");
-  const key = process.env.WAVES_TOKEN?.trim() || process.env.WAVES_PROD_TOKEN?.trim() || "";
-  return { id: "default", url, key, hosts: [], path: "/", branding: { tenant: "default" } };
+/** Tenant "não resolvido": host SEM match em tenants.json. Sem url/key → o proxy
+ * `/api/waves` nunca alcança uma Waves (falha explícita) e `/api/tenant` responde
+ * 404. "Ou encontra o tenant, ou nada" — NUNCA um default/legacy silencioso
+ * servindo a Waves de outro tenant. */
+export const UNRESOLVED_TENANT: Tenant = {
+  id: "unresolved",
+  url: "",
+  key: "",
+  hosts: [],
+  path: "/",
+  branding: { tenant: "" },
+};
+
+/** `true` se o tenant foi resolvido de verdade (tem url e não é o UNRESOLVED). */
+export function isTenantResolved(t: Tenant | null | undefined): boolean {
+  return !!t && t.id !== "unresolved" && !!t.url;
 }
 
 /** Resolve o tenant pelo Host do request. `null` se nenhum atender o host. */
@@ -184,15 +191,17 @@ export function resolveTenantByHost(host: string | undefined): Tenant | null {
   return null;
 }
 
-/** Tenant default — `DEFAULT_TENANT` (env), senão o 1º do arquivo, senão legado. */
+/** Default = SÓ `DEFAULT_TENANT` (env explícito, para deploy single-tenant
+ * onde o operador escolhe o tenant de propósito). Sem o env → UNRESOLVED.
+ * NÃO cai mais no 1º tenant do arquivo nem no legado WAVES_URL: host sem match
+ * NUNCA serve a Waves de outro tenant. */
 export function getDefaultTenant(): Tenant {
-  const tenants = loadTenants();
   const defId = process.env.DEFAULT_TENANT?.trim();
   if (defId) {
-    const t = tenants.find((x) => x.id === defId);
+    const t = loadTenants().find((x) => x.id === defId);
     if (t) return t;
   }
-  return tenants[0] ?? legacyTenant();
+  return UNRESOLVED_TENANT;
 }
 
 /** Tenant ativo do request atual (via ALS), senão o default. */
