@@ -56,6 +56,15 @@ export default function App() {
     };
   }, []);
 
+  // Título da aba = nome do tenant (resolvido pelo host via /api/tenant), sem
+  // "Waves" hardcoded. Base global (login + chat); o ChatPage refina com o
+  // page_title do agente. Fallback = hostname literal (= "o nome do host").
+  useEffect(() => {
+    fetchTenantBranding().then((b) => {
+      document.title = b?.tenant?.trim() || window.location.hostname;
+    });
+  }, []);
+
   const handleLogin = useCallback(
     (next: AuthSession) => {
       setSession(next);

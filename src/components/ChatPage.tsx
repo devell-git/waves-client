@@ -946,11 +946,14 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     return (session.agents ?? []).find((a) => a.port === port);
   }, [activeProfile, availableProfiles, session.agents]);
 
-  // Título da página (browser tab) vem do agente cadastrado na plataforma.
+  // Título da aba = nome do tenant (resolvido pelo host) — sem "Waves"
+  // hardcoded. Base = branding.tenant, ou o hostname literal se não resolver.
+  // Se o agente tem page_title, prefixa: "<page_title> · <tenant>".
   useEffect(() => {
+    const brand = branding?.tenant?.trim() || window.location.hostname;
     const t = activeAgent?.page_title?.trim();
-    document.title = t ? `${t} · Waves` : "Waves";
-  }, [activeAgent]);
+    document.title = t ? `${t} · ${brand}` : brand;
+  }, [activeAgent, branding]);
 
   const defaultWorkflowId: number | undefined = undefined;
   const persona = userScope?.persona ?? null;
