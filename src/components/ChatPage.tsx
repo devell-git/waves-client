@@ -950,10 +950,12 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   // Nome do agente vem do cadastro (page_title/title/name). Sem agente → "Chat".
   // (A tela de login usa o nome do tenant — definido no App.tsx.)
   useEffect(() => {
+    // Nome do agente = campo "Nome" (name) cadastrado na Waves (ex.:
+    // "BioShield - Steve"); fallback título/page_title só se name faltar.
     const agent =
-      activeAgent?.page_title?.trim() ||
+      activeAgent?.name?.trim() ||
       activeAgent?.title?.trim() ||
-      activeAgent?.name?.trim();
+      activeAgent?.page_title?.trim();
     document.title = agent ? `Chat | ${agent}` : "Chat";
   }, [activeAgent]);
 
