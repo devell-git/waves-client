@@ -946,14 +946,16 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     return (session.agents ?? []).find((a) => a.port === port);
   }, [activeProfile, availableProfiles, session.agents]);
 
-  // Título da aba = nome do tenant (resolvido pelo host) — sem "Waves"
-  // hardcoded. Base = branding.tenant, ou o hostname literal se não resolver.
-  // Se o agente tem page_title, prefixa: "<page_title> · <tenant>".
+  // Aba interna (só temos a página de chat) → "Chat | <nome do agente>".
+  // Nome do agente vem do cadastro (page_title/title/name). Sem agente → "Chat".
+  // (A tela de login usa o nome do tenant — definido no App.tsx.)
   useEffect(() => {
-    const brand = branding?.tenant?.trim() || window.location.hostname;
-    const t = activeAgent?.page_title?.trim();
-    document.title = t ? `${t} · ${brand}` : brand;
-  }, [activeAgent, branding]);
+    const agent =
+      activeAgent?.page_title?.trim() ||
+      activeAgent?.title?.trim() ||
+      activeAgent?.name?.trim();
+    document.title = agent ? `Chat | ${agent}` : "Chat";
+  }, [activeAgent]);
 
   const defaultWorkflowId: number | undefined = undefined;
   const persona = userScope?.persona ?? null;
