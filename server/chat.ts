@@ -50,6 +50,7 @@ import {
 } from "./form-cache.js";
 import { getProfileGateway } from "./profile-routing.js";
 import { clearProgress, setProgress } from "./tool-progress.js";
+import { consultToolToProfile, getLatestJob } from "./specialist-jobs.js";
 
 /**
  * Schemas das tools (sem function executor) — usado pelo Codex (Responses API).
@@ -1602,6 +1603,11 @@ async function handleChatRequestHermes(
 
       let totalAssistantContent = "";
       let toolCallIdx = 0;
+      // Tools `consult_*` (Vigia/Cronos/…) vistas no progress deste request —
+      // o gateway executa o sub-agent internamente e NÃO devolve o job_id no
+      // stream, então detectamos a chamada aqui e buscamos o job_id no .db pra
+      // injetar o `check_job` (card "Vigia analisando…") de forma determinística.
+      const consultToolsSeen = new Set<string>();
       // Acumula tokens da geração (somados entre turnos do loop).
       let usagePrompt = 0;
       let usageCompletion = 0;
@@ -1706,6 +1712,7 @@ async function handleChatRequestHermes(
                         toolCallId: p.toolCallId,
                         status: p.status === "completed" ? "completed" : "running",
                       });
+                      if (/consult_/i.test(p.tool)) consultToolsSeen.add(p.tool);
                     }
                   } catch {
                     // payload inválido — ignora
@@ -1934,6 +1941,31 @@ async function handleChatRequestHermes(
             console.log(
               `[chat:usage] thread=${safeThreadId} 0 tok — sem usage (resposta nativa/sem chamada LLM ou gateway não reportou)`,
             );
+          }
+
+          // Card de specialist (Vigia/Cronos/…): o agente nem sempre emite o
+          // marcador `check_job` no texto. Se um `consult_*` rodou neste request,
+          // busca o job recém-criado no .db (read-only) e injeta o marcador — o
+          // JobProgressCard monta sozinho (animação "analisando…" + auto-render
+          // quando o sub-agent volta). Determinístico, sem depender do LLM.
+          for (const tool of consultToolsSeen) {
+            const profile = consultToolToProfile(tool);
+            const job = profile ? getLatestJob(profile) : null;
+            if (job) {
+              enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: "chatcmpl-specialist",
+                    object: "chat.completion.chunk",
+                    choices: [
+                      { index: 0, delta: { content: `\ncheck_job: "${job.jobId}"` }, finish_reason: null },
+                    ],
+                  })}\n\n`,
+                ),
+              );
+              console.log(`[chat:specialist] ${tool} → job ${job.jobId} (check_job injetado)`);
+              break; // 1 card por request (parseCheckJob pega o 1º marcador)
+            }
           }
 
           enqueue(encoder.encode("data: [DONE]\n\n"));
