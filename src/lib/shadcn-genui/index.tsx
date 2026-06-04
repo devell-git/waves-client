@@ -14,6 +14,7 @@ import { CardHeader } from "./components/card-header";
 import { CodeBlock } from "./components/code-block";
 import { Image, ImageBlock } from "./components/image";
 import { FileDownload } from "./components/file-download";
+import { GenerateReportPdf } from "./components/generate-report-pdf";
 import { WavesDocPdf } from "./components/waves-doc-pdf";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { Progress } from "./components/progress";
@@ -111,6 +112,7 @@ const ChatCardChildUnion = z.union([
   PendingCriticalReport.ref,
   ResponsibilityLoadReport.ref,
   Collapsible.ref,
+  Accordion.ref,
   List.ref,
   Steps.ref,
 ]);
@@ -145,14 +147,16 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "Image",
       "ImageBlock",
       "FileDownload",
+      "GenerateReportPdf",
       "WavesDocPdf",
       "Progress",
       "Separator",
     ],
     notes: [
       "- Image/ImageBlock mostram imagem inline (src = URL pública ou data:image/...;base64).",
-      "- FileDownload(id, filename, mimeType?, size?) — arquivo genérico em agent-files (id = uuid). Para PDF de RELATÓRIO prefira WavesDocPdf (PDF gerado pela Waves).",
-      "- WavesDocPdf(docId, filename?, label?) — botão que baixa o PDF de um DOCUMENTO da Waves (GET /api/documents/{docId}/pdf). FLUXO do PDF de relatório: crie o documento na Waves (skill manage-documents → POST /api/documents com o HTML), pegue o `id` retornado e ofereça `WavesDocPdf(<id>, \"relatorio.pdf\")`. O PDF é gerado pela própria Waves — NÃO gere PDF local nem use FileDownload pra isso.",
+      "- FileDownload(id, filename, mimeType?, size?) — arquivo genérico em agent-files (id = uuid).",
+      "- 🔑 GenerateReportPdf(workflow_id, title?, subtitle?, filename?, label?) — É ASSIM que se faz PDF de RELATÓRIO/cronograma de um AP. O RUNTIME busca os dados ao vivo, monta o HTML executivo completo (saúde do cronograma + pendências críticas + carga por responsável), cria o documento NA Waves e baixa o PDF — TUDO no clique do botão. Você só emite `GenerateReportPdf(<workflow_id>, \"Relatório executivo — AP 6.4\")`. NÃO monte HTML, NÃO chame POST /api/documents, NÃO use a skill manage-documents pra isso, NÃO mande os dados. Vale também em conversa: se pedirem o PDF, ofereça este botão (não precisa ter mostrado card antes).",
+      "- WavesDocPdf(docId, filename?, label?) — só pra baixar o PDF de um documento Waves que JÁ existe (você tem o id). Pra gerar relatório use GenerateReportPdf.",
     ],
   },
   {
@@ -277,7 +281,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       '- 🔑 SAÚDE DO CRONOGRAMA / avanço esperado vs real / desvio de um AP: SEMPRE `h = Query("get_schedule_health", {workflow_id: <id>}, {rows: []})` + `rep = ScheduleHealthReport(h)`. O RUNTIME compara % esperado (tempo decorrido) vs % real (progress), classifica saúde e monta cards + leitura executiva + tabela. NÃO calcule você mesmo nem monte a tabela à mão.',
       '- 🔑 PENDÊNCIAS CRÍTICAS / bloqueios / "o que está travado" de um AP: SEMPRE `p = Query("get_pending_critical", {workflow_id: <id>}, {rows: []})` + `rep = PendingCriticalReport(p)`. O RUNTIME filtra vencidas/sem responsável/sem prazo/paradas/aguardando dependência e monta cards + leitura executiva + tabela acionável. NÃO filtre você mesmo nem monte a tabela à mão.',
       '- 🔑 CARGA / RESPONSABILIDADE / distribuição por responsável de um AP: SEMPRE `c = Query("get_responsibility_load", {workflow_id: <id>}, {rows: []})` + `rep = ResponsibilityLoadReport(c)`. O RUNTIME agrupa por pessoa (total/seguras/atenção/críticas/vencendo em 7d/% médio/risco/observação). NÃO agrupe você mesmo nem monte a tabela à mão.',
-      '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e ofereça o PDF: crie o documento na Waves (skill manage-documents → POST /api/documents com o HTML) e use `WavesDocPdf(<id>, "relatorio.pdf")` (o botão faz GET /api/documents/{id}/pdf — a Waves gera o PDF). NÃO há "publicar" separado: gerar o PDF JÁ cria o documento na Waves. Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
+      '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e ofereça o PDF com `GenerateReportPdf(<workflow_id>, "Relatório executivo — AP 6.4")`. O botão monta o HTML completo a partir dos dados ao vivo, cria o documento na Waves e baixa o PDF — NÃO há "publicar" separado e você NÃO monta HTML nem manda dados. Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
       '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
       "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks/statistics) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
@@ -461,6 +465,7 @@ export const shadcnChatLibrary = createLibrary({
     ImageBlock,
     FileDownload,
     WavesDocPdf,
+    GenerateReportPdf,
     Progress,
     Separator,
     // Tables

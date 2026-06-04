@@ -25,6 +25,11 @@ export type AgentItem = {
   /** Título/subtítulo da página do agente (cadastrados na Waves). */
   page_title?: string;
   page_subtitle?: string;
+  /** Política de reasoning do agente (cadastrada na Waves):
+   *  - "On": sempre usa reasoning (aprofundado), SEM mostrar o botão.
+   *  - "Off": nunca usa reasoning (rápido), SEM mostrar o botão.
+   *  - "Selectable": mostra o botão; default desligado (rápido). */
+  reasoning?: "On" | "Off" | "Selectable" | string | null;
   [key: string]: unknown;
 };
 

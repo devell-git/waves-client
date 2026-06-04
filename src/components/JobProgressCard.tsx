@@ -23,6 +23,8 @@ interface JobProgressCardProps {
   jobId: string;
   /** ETA inicial em segundos, extraída do texto do agente (fallback 300). */
   etaSeconds?: number;
+  /** Nome do especialista (Vigia/Cronos/…) — rotula o "trabalhando". */
+  specialist?: string | null;
   /** Renderer pro openui-lang final — injetado pra evitar import circular. */
   onActionContent?: (content: string, formState?: unknown, label?: string) => void;
 }
@@ -38,7 +40,7 @@ type JobState =
 const JOB_START = new Map<string, number>();
 const JOB_RESULT = new Map<string, JobState>();
 
-export function JobProgressCard({ jobId, etaSeconds = 300, onActionContent }: JobProgressCardProps) {
+export function JobProgressCard({ jobId, etaSeconds = 300, specialist, onActionContent }: JobProgressCardProps) {
   // Ancora o início UMA vez por jobId (persistente entre remounts).
   if (!JOB_START.has(jobId)) JOB_START.set(jobId, Date.now());
 
@@ -134,11 +136,13 @@ export function JobProgressCard({ jobId, etaSeconds = 300, onActionContent }: Jo
   // Avanço pela razão tempo/eta (eta usado só p/ ritmo da barra, NÃO exibido).
   const pct = Math.min(95, Math.round((elapsed / state.etaS) * 100));
 
+  const title = specialist ? `${specialist} analisando…` : "Consulta em andamento";
+
   return (
     <div className="job-progress job-progress--compact" aria-live="polite">
       <div className="job-progress__row">
         <span className="job-progress__spinner" aria-hidden="true" />
-        <span className="job-progress__title">Consulta em andamento</span>
+        <span className="job-progress__title">{title}</span>
         <span className="job-progress__pct">{pct}%</span>
       </div>
       <div className="job-progress__bar">
@@ -148,16 +152,40 @@ export function JobProgressCard({ jobId, etaSeconds = 300, onActionContent }: Jo
   );
 }
 
-/** Extrai jobId + eta de uma resposta do agente que contém `check_job: "<id>"`.
- * Robusto a aspas escapadas (`\"id\"`) — o agente emite o marcador dentro de
- * uma string openui-lang (ex.: `Tag("check_job: \"abc\"", ...)`), então as
- * aspas internas vêm escapadas. Também aceita eta em "420s" ou "420 segundos". */
-export function parseCheckJob(content: string): { jobId: string; etaSeconds: number } | null {
-  const m = content.match(/check_job\s*[:=]\s*\\?["']([a-zA-Z0-9]{6,})\\?["']/);
+const SPECIALISTS: Array<[RegExp, string]> = [
+  [/\bvigia\b/i, "Vigia"],
+  [/\bcronos\b/i, "Cronos"],
+  [/engenheir|engineer/i, "Engenheiro"],
+  [/tesoureir|treasurer/i, "Tesoureiro"],
+  [/capital\s*humano|\brh\b|\bhr\b/i, "Capital Humano"],
+];
+
+/** Extrai jobId + eta + especialista de uma resposta do agente que dispara um
+ * sub-agent. Detecção ROBUSTA — o modelo nem sempre acerta o formato canônico
+ * `check_job: "<id>"`; com frequência escreve o id em prosa (`Job: 9535596caa74`).
+ * Cobrimos as duas formas pra o card vivo engatar de qualquer jeito:
+ *   1. `check_job` / `job_id` (`:` ou `=`, aspas opcionais e escapadas) — id 6+ alnum
+ *   2. `Job: <id>` em prosa — id de 10+ hex (formato dos job_ids), p/ não dar falso-positivo
+ * Também extrai eta ("420s"/"420 segundos") e o nome do especialista (Vigia/…). */
+export function parseCheckJob(
+  content: string,
+): { jobId: string; etaSeconds: number; specialist: string | null } | null {
+  let m = content.match(/(?:check_job|job_id)\s*[:=]\s*\\?["']?([a-zA-Z0-9]{6,})\\?["']?/i);
+  if (!m) m = content.match(/\bjob\s*[:#]\s*["']?([a-f0-9]{10,})["']?/i);
   if (!m) return null;
   const eta =
     content.match(/(\d{2,4})\s*segundos/) ||
     content.match(/(?:Previs[ãa]o|ETA|estimad[oa])[^0-9]{0,12}(\d{2,4})\s*s\b/i) ||
     content.match(/(\d{2,4})\s*s\b/);
-  return { jobId: m[1], etaSeconds: eta ? Number(eta[1]) : 420 };
+  const specialist = SPECIALISTS.find(([re]) => re.test(content))?.[1] ?? null;
+  return { jobId: m[1], etaSeconds: eta ? Number(eta[1]) : 420, specialist };
+}
+
+/** Remove um marcador de job que esteja SOLTO em prosa (linha própria), pra a
+ * "preliminar" do agente não exibir o id cru. NÃO toca em marcador dentro de
+ * openui (`context={check_job: ...}`), que é precedido por `{` e fica invisível. */
+export function stripJobMarker(content: string): string {
+  return content
+    .replace(/(?:^|\n)[^\S\n]*(?:check_job|job_id|job)\s*[:=#]\s*\\?["']?[a-zA-Z0-9]{6,}\\?["']?[^\S\n]*(?=\n|$)/gi, "")
+    .trim();
 }

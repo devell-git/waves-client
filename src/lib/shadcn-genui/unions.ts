@@ -10,6 +10,7 @@ import { DrawerBlock } from "./components/drawer-block";
 import { FollowUpBlock } from "./components/follow-up-block";
 import { Image, ImageBlock } from "./components/image";
 import { FileDownload } from "./components/file-download";
+import { GenerateReportPdf } from "./components/generate-report-pdf";
 import { WavesDocPdf } from "./components/waves-doc-pdf";
 import { TaskList } from "./components/task-list";
 import { ProjectOverview } from "./components/project-overview";
@@ -50,6 +51,7 @@ export const ContentChildUnion = z.union([
   ImageBlock.ref,
   FileDownload.ref,
   WavesDocPdf.ref,
+  GenerateReportPdf.ref,
   Progress.ref,
   Separator.ref,
   BarChartCondensed.ref,

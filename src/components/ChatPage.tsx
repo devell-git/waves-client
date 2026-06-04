@@ -49,7 +49,7 @@ import {
   getThreadMessages,
   toOpenUIMessage,
 } from "../api/threads";
-import { JobProgressCard, parseCheckJob } from "./JobProgressCard";
+import { JobProgressCard, parseCheckJob, stripJobMarker } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import { getKanbanCtx } from "../lib/kanban-context";
@@ -254,29 +254,36 @@ function GenUIAssistantMessage({
     );
   }
 
-  // Job em background (Relatório MAP / Mídias Negativas): o agente emite um
-  // `check_job: "<id>"`. Em vez de mostrar o texto cru, renderizamos um card
-  // com progress bar ao vivo que vira o resultado quando o job conclui.
+  // Job em background (specialist Vigia/Cronos/… ou Relatório MAP/Mídias): o
+  // agente dispara o sub-agent e referencia o job (marcador `check_job: "<id>"`
+  // ou, na prática, `Job: <id>` em prosa). Mostramos a PRELIMINAR do agente E,
+  // logo abaixo, o card vivo "Vigia analisando…" que polla e vira o resultado
+  // quando o job conclui. `bodyContent` tira só um marcador solto (não o de
+  // dentro do openui) pra não exibir o id cru.
   const job = parseCheckJob(content);
-  if (job) {
-    return (
-      <AssistantMessageShell meta={meta}>
-        <JobProgressCard
-          jobId={job.jobId}
-          etaSeconds={job.etaSeconds}
-          onActionContent={(label, formState) => {
-            const contentPart = label ? `<content>${label}</content>` : "";
-            const ctx: unknown[] = [`User clicked: ${label ?? ""}`];
-            if (formState) ctx.push(formState);
-            processMessage({ role: "user", content: `${contentPart}<context>${JSON.stringify(ctx)}</context>` });
-          }}
-        />
-      </AssistantMessageShell>
-    );
+  const bodyContent = job ? stripJobMarker(content) : content;
+  const hasBody = bodyContent.trim().length > 0;
+  const jobCard = job ? (
+    <JobProgressCard
+      jobId={job.jobId}
+      etaSeconds={job.etaSeconds}
+      specialist={job.specialist}
+      onActionContent={(label, formState) => {
+        const contentPart = label ? `<content>${label}</content>` : "";
+        const ctx: unknown[] = [`User clicked: ${label ?? ""}`];
+        if (formState) ctx.push(formState);
+        processMessage({ role: "user", content: `${contentPart}<context>${JSON.stringify(ctx)}</context>` });
+      }}
+    />
+  ) : null;
+
+  // Só o marcador (sem preliminar) → renderiza apenas o card vivo.
+  if (job && !hasBody) {
+    return <AssistantMessageShell meta={meta}>{jobCard}</AssistantMessageShell>;
   }
 
-  // Texto puro (sem construções openui-lang) → bolha de chat simples
-  if (!OPENUI_PATTERN.test(content)) {
+  // Texto puro (sem construções openui-lang) → bolha de chat simples (+ card).
+  if (!OPENUI_PATTERN.test(bodyContent)) {
     return (
       <AssistantMessageShell meta={meta}>
         <div className="assistant-plain-text" style={{
@@ -284,8 +291,9 @@ function GenUIAssistantMessage({
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
         }}>
-          {content}
+          {bodyContent}
         </div>
+        {jobCard}
       </AssistantMessageShell>
     );
   }
@@ -293,7 +301,7 @@ function GenUIAssistantMessage({
   return (
     <AssistantMessageShell meta={meta}>
     <Renderer
-      response={content}
+      response={bodyContent}
       library={shadcnChatLibrary}
       isStreaming={isStreaming}
       toolProvider={getToolProvider() ?? undefined}
@@ -353,6 +361,7 @@ function GenUIAssistantMessage({
         }
       }}
     />
+    {jobCard}
     </AssistantMessageShell>
   );
 }
@@ -775,19 +784,52 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfile, activeThreadId, tenantId]);
 
-  // Modo de reasoning: "low" (⚡ Rápido, padrão) | "medium" (🧠 Aprofundado). Vira
-  // o header X-Hermes-Reasoning-Effort no /api/chat. Padrão "low" prioriza
-  // latência (bom pra geração de UI direta); "medium" aprofunda a análise.
-  const [reasoningMode, setReasoningMode] = useState<"low" | "medium">(() => {
-    if (typeof window === "undefined") return "low";
-    const v = window.localStorage.getItem(`waves-reasoning-${loadActiveProfileId()}`);
-    return v === "medium" ? "medium" : "low";
-  });
+  // Política de reasoning do AGENTE ativo (cadastrada na Waves, vem no login):
+  //  On → sempre "medium" e SEM botão; Off → sempre "low" e SEM botão;
+  //  Selectable → mostra botão, default "low". Default Selectable se não vier.
+  const reasoningPolicy = useMemo<"On" | "Off" | "Selectable">(() => {
+    const port = availableProfiles.find((p) => p.id === activeProfile)?.port;
+    const agent = (session.agents ?? []).find((a) => a.port === port);
+    const raw = String(agent?.reasoning ?? "").trim().toLowerCase();
+    if (raw === "on") return "On";
+    if (raw === "off") return "Off";
+    return "Selectable";
+  }, [activeProfile, availableProfiles, session.agents]);
+
+  // Modo de reasoning EFETIVO ("low" ⚡ rápido | "medium" 🧠 aprofundado), vira
+  // o header X-Hermes-Reasoning-Effort. Guardado POR THREAD (volta igual ao
+  // reabrir a conversa). On/Off forçam o valor; Selectable usa o salvo (default low).
+  const reasoningKey = (profile: string, thread: string) =>
+    `waves-reasoning-${tenantId}-${profile}-${thread}`;
+  const [reasoningSelection, setReasoningSelection] = useState<"low" | "medium">("low");
+
+  // Hidrata a seleção salva da thread atual (e reage à política do agente).
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(`waves-reasoning-${activeProfile}`, reasoningMode);
-    }
-  }, [activeProfile, reasoningMode]);
+    if (reasoningPolicy === "On") { setReasoningSelection("medium"); return; }
+    if (reasoningPolicy === "Off") { setReasoningSelection("low"); return; }
+    if (typeof window === "undefined") return;
+    const v = window.localStorage.getItem(reasoningKey(activeProfile, activeThreadId));
+    setReasoningSelection(v === "medium" ? "medium" : "low");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile, activeThreadId, reasoningPolicy, tenantId]);
+
+  // O que de fato é enviado (política sobrepõe a seleção).
+  const reasoningMode: "low" | "medium" =
+    reasoningPolicy === "On" ? "medium"
+    : reasoningPolicy === "Off" ? "low"
+    : reasoningSelection;
+
+  // Toggle (só relevante em Selectable): alterna e persiste NA THREAD.
+  const toggleReasoning = useCallback(() => {
+    setReasoningSelection((m) => {
+      const next = m === "low" ? "medium" : "low";
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(reasoningKey(activeProfile, activeThreadId), next);
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile, activeThreadId, tenantId]);
 
   const handleProfileChange = (id: string) => {
     if (id === activeProfile) return;
@@ -1144,7 +1186,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                 <ChatComposer
                   attachmentsRef={attachmentsRef}
                   reasoningMode={reasoningMode}
-                  onToggleReasoning={() => setReasoningMode((m) => (m === "low" ? "medium" : "low"))}
+                  onToggleReasoning={
+                    reasoningPolicy === "Selectable" ? toggleReasoning : undefined
+                  }
                 />
               </Shell.ThreadContainer>
             </Shell.Container>

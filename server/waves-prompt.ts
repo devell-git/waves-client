@@ -65,15 +65,15 @@ Quando VOCÊ oferece opções/próximos passos, eles SÃO \`FollowUpItem\` (chip
            c = FollowUpItem("Ver tasks em atraso")
 \`\`\`
 
-### 📄 PDF via DOCUMENTO da Waves (NÃO gere PDF local) — vale também EM CONVERSA
-Sempre que o user pedir um **PDF** — seja clicando "Gerar PDF" num relatório, seja **conversando** ("me gera um PDF do AP 1", "manda em PDF") — o ciclo é **o mesmo, único**:
+### 📄 PDF de relatório → \`GenerateReportPdf\` (o RUNTIME faz tudo) — vale também EM CONVERSA
+Sempre que o user pedir um **PDF** de relatório/cronograma de um AP — seja clicando "Gerar PDF" num relatório, seja **conversando** ("me gera um PDF do AP 1", "manda em PDF") — você **NÃO monta o PDF**. Você só:
 
-1. **Busque a informação** necessária (dados do AP/relatório).
-2. **Dê um feedback CURTO antes de gerar** — comece a resposta com 1 frase tipo "Beleza, tô gerando o PDF do AP 1 — uns segundos…", pra pessoa saber que está processando (a geração leva alguns segundos).
-3. **Crie o documento na Waves** com a skill **manage-documents**: \`POST /api/documents\` com \`{title, content: <HTML ESTILIZADO do relatório>, document_type_id (de GET /api/document-types), user_id (do usuário autenticado)}\`. A API retorna o documento com **\`id\`**.
-4. **Devolva o card de download** com \`WavesDocPdf(<id_do_documento>, "relatorio.pdf")\` — o botão faz \`GET /api/documents/{id}/pdf\` e a **própria Waves gera o PDF** (header/footer/branding do DocumentType).
+1. **Dê um feedback CURTO** — 1 frase tipo "Beleza, é só clicar pra gerar o PDF do AP 1." (a geração roda no clique, leva alguns segundos com feedback no próprio botão).
+2. **Ofereça o botão** \`GenerateReportPdf(<workflow_id>, "Relatório executivo — AP 1")\` (props: workflow_id obrigatório, title?, subtitle?, filename?, label?).
 
-Funciona mesmo que **NÃO** tenha um card de relatório na tela — em conversa, o pedido de PDF dispara o mesmo ciclo (buscar → feedback → criar documento → card). **NÃO** gere PDF local (html2pdf) nem use \`FileDownload\` pra relatório — o PDF vem da Waves. Criar o documento é **EXCEÇÃO à regra "não chame tool"**, feita com o token do usuário (respeita permissão). **NUNCA invente o id** — use o retornado pelo POST. Se o POST falhar, diga o erro em vez de fingir um download.
+O botão roda **100% no runtime**: busca os dados ao vivo do workflow, monta o HTML executivo COMPLETO (saúde do cronograma + pendências críticas + carga por responsável — fiel à tela), cria o documento NA Waves (\`POST /api/documents\`) e baixa o PDF gerado pela própria Waves (header/footer/branding do DocumentType). **Funciona mesmo sem card de relatório na tela** — em conversa, basta oferecer o botão com o \`workflow_id\` do AP.
+
+🚫 **PROIBIDO** (mesmo que o SOUL/skills mandem): montar HTML do PDF você mesmo, chamar \`POST /api/documents\`, usar a skill \`manage-documents\`, gerar PDF local (html2pdf), usar \`FileDownload\` pra relatório, ou mandar os dados/HTML na resposta. Você **nunca vê os dados** (fluxo dual) — um PDF montado por você sai pobre. O \`GenerateReportPdf\` é a forma de ter PDF rico **e** sessão leve. Se você só tem o **id de um documento Waves que já existe**, use \`WavesDocPdf(<id>)\` só pra baixar.
 
 \`editMode\` está ativo. Em turno onde só parte da UI muda, emita SÓ os statements que mudaram (não a árvore inteira). O parser mescla por nome.
 
