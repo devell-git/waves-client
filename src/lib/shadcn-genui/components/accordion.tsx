@@ -10,16 +10,10 @@ import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
 import { ContentChildUnion } from "../unions";
 
-// Tolerante a drift do agente: `value` opcional (cai no índice), header por
-// `trigger` OU `title` (agentes usam `title`), e `content` único OU array.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const asArray = (c: any): any[] => (Array.isArray(c) ? c : c != null ? [c] : []);
-
 const AccordionItemSchema = z.object({
-  value: z.string().optional(),
-  trigger: z.string().optional(),
-  title: z.string().optional(),
-  content: z.union([ContentChildUnion, z.array(ContentChildUnion)]).optional(),
+  value: z.string(),
+  trigger: z.string(),
+  content: z.array(ContentChildUnion),
 });
 
 export const AccordionItemDef = defineComponent({
@@ -48,8 +42,8 @@ export const Accordion = defineComponent({
         <ShadcnAccordion type="single" collapsible>
           {items.map((item, i) => (
             <AccordionItem key={i} value={String(item?.props?.value ?? i)}>
-              <AccordionTrigger>{String(item?.props?.trigger ?? item?.props?.title ?? "")}</AccordionTrigger>
-              <AccordionContent>{renderNode(asArray(item?.props?.content))}</AccordionContent>
+              <AccordionTrigger>{String(item?.props?.trigger ?? "")}</AccordionTrigger>
+              <AccordionContent>{renderNode(item?.props?.content)}</AccordionContent>
             </AccordionItem>
           ))}
         </ShadcnAccordion>

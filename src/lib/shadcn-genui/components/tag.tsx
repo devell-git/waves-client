@@ -4,31 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
 
-// Tolerante a drift do agente: aceita `text` OU `label` (a SOUL ensina `label`),
-// e QUALQUER variant (semânticos info/success/warning vêm dos agentes) — mapeando
-// pro vocabulário do Badge em vez de rejeitar a árvore inteira na validação.
 const TagSchema = z.object({
-  text: z.string().optional(),
-  label: z.string().optional(),
-  variant: z.string().optional(),
-  color: z.string().optional(), // ignorado; agentes às vezes mandam
+  text: z.string(),
+  variant: z.enum(["default", "secondary", "destructive", "outline", "ghost"]).optional(),
 });
-
-type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
-const BADGE_VARIANTS = new Set<BadgeVariant>(["default", "secondary", "destructive", "outline"]);
-export function mapBadgeVariant(v?: string): BadgeVariant {
-  if (v && BADGE_VARIANTS.has(v as BadgeVariant)) return v as BadgeVariant;
-  if (v === "error" || v === "danger" || v === "warning") return "destructive";
-  return "secondary"; // default/info/success/ghost/desconhecidos
-}
-export const tagText = (p: { text?: string; label?: string } | undefined): string =>
-  String(p?.text ?? p?.label ?? "");
 
 export const Tag = defineComponent({
   name: "Tag",
   props: TagSchema,
-  description: "Styled tag/badge. Used inside TagBlock. Aceita text|label e qualquer variant.",
-  component: ({ props }) => <Badge variant={mapBadgeVariant(props.variant)}>{tagText(props)}</Badge>,
+  description: "Styled tag/badge. Used inside TagBlock.",
+  component: ({ props }) => <Badge variant={props.variant ?? "secondary"}>{props.text}</Badge>,
 });
 
 export const TagBlock = defineComponent({
@@ -50,9 +35,11 @@ export const TagBlock = defineComponent({
               </Badge>
             );
           }
+          const text = String(tag?.props?.text ?? "");
+          const variant = tag?.props?.variant ?? "secondary";
           return (
-            <Badge key={i} variant={mapBadgeVariant(tag?.props?.variant)}>
-              {tagText(tag?.props)}
+            <Badge key={i} variant={variant}>
+              {text}
             </Badge>
           );
         })}
