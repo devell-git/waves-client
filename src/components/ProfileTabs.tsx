@@ -18,57 +18,6 @@ export interface ProfileOption {
   port?: number;
 }
 
-/** Entrada do registry exposto pelo servidor em `/api/profiles`. */
-export interface RegistryProfile {
-  id: string;
-  label: string;
-  port: number;
-}
-
-/** Agente como vem no login (subset relevante p/ o seletor). */
-export interface LoginAgentLike {
-  name?: string;
-  title?: string;
-  profile_name?: string;
-  port?: number;
-}
-
-/**
- * Monta a lista do seletor a partir dos agentes que vieram no LOGIN do usuário,
- * confirmando cada um contra o registry roteável do servidor.
- *
- * O casamento é por **porta**: o Hermes re-registra `host:port` na tabela
- * `agents` do Waves ao subir, então a porta do agente no login bate com a porta
- * do profile roteável. Isso resolve renomeações (ex.: login traz `ybrax-map`,
- * mas o profile local é `ybrax-verifique` — ambos na 18864).
- *
- * Resultado: só aparecem agentes que (a) vieram no login E (b) têm gateway
- * roteável no servidor. O rótulo usa o **nome do login**; o id usado pra rotear
- * é o do registry (profile Hermes real).
- */
-export function buildProfilesFromLogin(
-  registry: RegistryProfile[],
-  agents: LoginAgentLike[],
-): ProfileOption[] {
-  const byPort = new Map<number, RegistryProfile>();
-  for (const r of registry) byPort.set(r.port, r);
-
-  const out: ProfileOption[] = [];
-  const seen = new Set<string>();
-  for (const a of agents) {
-    if (typeof a.port !== "number") continue;
-    const r = byPort.get(a.port);
-    if (!r || seen.has(r.id)) continue; // agente sem gateway roteável → não aparece
-    seen.add(r.id);
-    out.push({
-      id: r.id,
-      label: a.name ?? a.title ?? r.label,
-      description: `${a.profile_name ?? r.id} · :${r.port}`,
-      port: r.port,
-    });
-  }
-  return out;
-}
 
 export const DEFAULT_PROFILE_ID = "ybrax-negative-media";
 const STORAGE_KEY = "waves-active-profile";

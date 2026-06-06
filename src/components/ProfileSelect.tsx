@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
   type ProfileOption,
-  buildProfilesFromLogin,
   loadActiveProfileId,
   saveActiveProfileId,
   DEFAULT_PROFILE_ID,
 } from "./ProfileTabs";
 
 export {
-  buildProfilesFromLogin,
   loadActiveProfileId,
   saveActiveProfileId,
   DEFAULT_PROFILE_ID,

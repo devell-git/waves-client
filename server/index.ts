@@ -12,7 +12,6 @@ import {
   maskSecret,
 } from "./load-env.js";
 import { handleChatRequest, resolveHermesGateway } from "./chat.js";
-import { listProfiles } from "./profile-routing.js";
 import {
   getActiveTenant,
   getDefaultTenant,
@@ -353,12 +352,6 @@ app.get("/api/runtime", (req, res) => {
   });
 });
 
-// Lista de profiles disponíveis (fixa por enquanto). Frontend usa pra montar
-// as tabs. Quando virar dinâmico: ler de /home/bot/.hermes/profiles/.
-app.get("/api/profiles", (_req, res) => {
-  res.set("Cache-Control", "no-store");
-  res.json({ profiles: listProfiles() });
-});
 
 // ─── Histórico de conversas (threads) ──────────────────────────────────
 // Cada profile tem seu próprio state.db. As rotas aqui leem/escrevem nele
