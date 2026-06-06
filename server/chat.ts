@@ -1402,18 +1402,10 @@ interface HandleHermesOptions {
   profileId?: string;
 }
 
-// (HARD PATH 2026-05-29) Persiste o Bearer do usuário logado pra que o profile
-// possa consultar a Waves com o token DELE (e não com o token admin das MCP
-// tools). O script scripts/waves_web_query.py lê esse arquivo por user_id e
-// chama a API → a Waves filtra server-side (200 no escopo, 403 fora). Assim a
-// waves_client passa a escopar igual ao Telegram. Token grava a cada request
-// (sempre o mais fresco); arquivo só-local, chmod 600.
-//
-// Allowlist: só grava pros profiles que de fato consomem (têm o script +
-// CONTEXT). Evita deixar Bearer de usuário no disco onde ninguém usa. Pra
-// habilitar outro profile: (1) adicione o id aqui, (2) copie/escreva o
-// waves_web_query.py no profile, (3) instrua no contexto dele.
-const HARD_PATH_PROFILES = new Set<string>(["bioshield-steve"]);
+// Persiste o Bearer do usuário logado pra que o MCP do profile consulte a Waves
+// com o token DELE (a Waves filtra server-side: 200 no escopo, 403 fora). Grava
+// a cada request (sempre o mais fresco), só-local, chmod 600. Escreve pro profile
+// ATIVO da request — o profile vem do login, não de allowlist/config.
 const HERMES_PROFILES_ROOT = "/home/bot/.hermes/profiles";
 
 function persistWebSessionToken(
@@ -1424,7 +1416,8 @@ function persistWebSessionToken(
   tenant: string | undefined,
 ): void {
   try {
-    if (!profileId || !HARD_PATH_PROFILES.has(profileId)) return;
+    // Grava pro profile ATIVO da request (o profile vem do login, não de config).
+    if (!profileId) return;
     if (userId == null || !wavesSession?.accessToken) return;
     // grava na pasta do PRÓPRIO profile (não vaza token entre profiles)
     const dir = join(HERMES_PROFILES_ROOT, profileId, "state", "web-sessions");
