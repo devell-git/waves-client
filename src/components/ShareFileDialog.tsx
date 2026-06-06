@@ -2,10 +2,20 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Paperclip, Send, X } from "lucide-react";
 import { loadSession } from "../lib/session";
+import { getActiveGateway } from "../api/threads";
 
 // Ponto de entrada de ENVIO do compartilhamento (Task 724, estilo WhatsApp):
 // botão no header → escolhe um arquivo (upload p/ /api/files) + um destinatário
 // (usuários do agente) → POST /api/files/:id/share → cai no sino do destinatário.
+
+/** URL de /api/share-recipients com host/port do gateway ativo (apps desacopladas). */
+function shareRecipientsUrl(profile: string): string {
+  const gw = getActiveGateway();
+  const qs = new URLSearchParams({ profile });
+  if (gw?.host) qs.set("host", gw.host);
+  if (gw?.port != null) qs.set("port", String(gw.port));
+  return `/api/share-recipients?${qs.toString()}`;
+}
 
 interface Recipient {
   user_id: string;
@@ -48,7 +58,7 @@ export function ShareFileDialog({ profile, userId }: { profile?: string; userId:
     if (profile) {
       try {
         const s = loadSession();
-        const r = await fetch(`/api/share-recipients?profile=${encodeURIComponent(profile)}`, {
+        const r = await fetch(shareRecipientsUrl(profile), {
           headers: s?.accessToken ? { Authorization: `Bearer ${s.accessToken}` } : {},
         });
         const d = (await r.json()) as { recipients?: Recipient[] };

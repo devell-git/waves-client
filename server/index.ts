@@ -1,7 +1,7 @@
 import "./load-env.js";
 import cors from "cors";
 import express from "express";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -294,9 +294,12 @@ function buildThreadCtx(
   // baseURL vem com /v1 (chat); os endpoints de sessão ficam na raiz (/api/...).
   const root = gw.baseURL.replace(/\/v1$/, "");
   const slug = getActiveTenant().id;
-  // session-id carrega só o SLUG (p/ a auth multi-tenant resolver o tenant);
-  // o uid não importa aqui (a lista é filtrada pelo prefixo do tenant).
-  return { ok: true, ctx: { root, token, sessionId: `waves-${slug}-user-0`, tenantSlug: slug } };
+  // session-id carrega só o SLUG (p/ a auth multi-tenant resolver o tenant); a
+  // lista é filtrada pelo prefixo do tenant. O uid é NÃO-numérico ("ro") de
+  // propósito: o `_persist_web_session` do gateway só grava quando casa
+  // `user-\d+`, então estes reads de histórico NÃO disparam escrita de
+  // web-session (o chat já mantém o token fresco) — zero I/O extra no gateway.
+  return { ok: true, ctx: { root, token, sessionId: `waves-${slug}-user-ro`, tenantSlug: slug } };
 }
 
 app.get("/api/threads", async (req, res) => {
@@ -430,31 +433,24 @@ app.post("/api/notifications/:id/read", async (req, res) => {
 // Destinatários p/ compartilhar arquivo: usuários que já logaram NESTE agente
 // (web-sessions do profile). Exige usuário autenticado.
 app.get("/api/share-recipients", async (req, res) => {
-  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
-  if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
-  const profile = String(req.query.profile ?? "");
-  if (!/^[a-z0-9-]+$/i.test(profile)) return res.status(400).json({ error: "profile inválido" });
+  // Apps DESACOPLADAS: não lê mais o web-sessions do FS do Hermes — pergunta ao
+  // gateway (GET /api/web-users), que conhece os usuários daquele profile.
+  const b = buildThreadCtx(req.headers.authorization as string | undefined, req.query.host, req.query.port);
+  if (!b.ok) return res.status(b.status).json({ error: b.error });
   try {
-    const dir = resolve("/home/bot/.hermes/profiles", profile, "state", "web-sessions");
-    const seen = new Set<string>();
-    const recipients: { user_id: string; name: string }[] = [];
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith(".json")) continue;
-      try {
-        const s = JSON.parse(readFileSync(resolve(dir, f), "utf8")) as Record<string, unknown>;
-        const uid = String(s.user_id ?? "");
-        if (uid && !seen.has(uid)) {
-          seen.add(uid);
-          recipients.push({
-            user_id: uid,
-            name: String(s.user_name ?? s.email ?? `Usuário ${uid}`),
-          });
-        }
-      } catch {
-        /* ignora sessão inválida */
-      }
-    }
-    recipients.sort((a, b) => a.name.localeCompare(b.name));
+    const r = await fetch(`${b.ctx.root}/api/web-users`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${b.ctx.token}`,
+        "X-Hermes-Session-Id": b.ctx.sessionId,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) return res.status(502).json({ recipients: [], error: `gateway /api/web-users → ${r.status}` });
+    const j = (await r.json()) as { data?: Array<{ user_id?: string; name?: string }> };
+    const recipients = (j.data ?? [])
+      .map((u) => ({ user_id: String(u.user_id ?? ""), name: String(u.name ?? "") }))
+      .filter((u) => u.user_id);
     res.json({ recipients });
   } catch {
     res.json({ recipients: [] });

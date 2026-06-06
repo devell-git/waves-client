@@ -1941,12 +1941,12 @@ async function handleChatRequestHermes(
 
           // Card de specialist (Vigia/Cronos/…): o agente nem sempre emite o
           // marcador `check_job` no texto. Se um `consult_*` rodou neste request,
-          // busca o job recém-criado no .db (read-only) e injeta o marcador — o
-          // JobProgressCard monta sozinho (animação "analisando…" + auto-render
+          // busca o job recém-criado via rendered_api (HTTP) e injeta o marcador —
+          // o JobProgressCard monta sozinho (animação "analisando…" + auto-render
           // quando o sub-agent volta). Determinístico, sem depender do LLM.
           for (const tool of consultToolsSeen) {
             const profile = consultToolToProfile(tool);
-            const job = profile ? getLatestJob(profile) : null;
+            const job = profile ? await getLatestJob(profile) : null;
             if (job) {
               enqueue(
                 encoder.encode(

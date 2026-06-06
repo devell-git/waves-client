@@ -1,13 +1,11 @@
-// Leitura READ-ONLY do banco de jobs de specialist (sub-agentes Vigia/Cronos/…).
-// NÃO modifica nada no Hermes — só lê o arquivo .db pra descobrir o job_id que
-// o `consult_*` acabou de criar, e assim o waves_client consegue montar o card
-// "Vigia analisando…" de forma DETERMINÍSTICA (sem depender do LLM emitir o
-// marcador `check_job`). Path e prefixo de profile são configuráveis por env.
-import { DatabaseSync } from "node:sqlite";
-
-const DB_PATH =
-  process.env.SPECIALIST_JOBS_DB ??
-  "/home/bot/.hermes/shared-knowledge/bioshield/state/specialist_jobs.db";
+// Descobre o job_id que o `consult_*` acabou de criar, pra o waves_client montar
+// o card "Vigia analisando…" de forma DETERMINÍSTICA (sem depender do LLM emitir
+// o marcador `check_job`). Apps DESACOPLADAS: NÃO lê mais o specialist_jobs.db
+// direto — consulta o rendered_api por HTTP (GET /specialist-jobs/latest), o
+// mesmo serviço que já serve o /rendered. Prefixo de profile configurável por env.
+const RENDERED_API_BASE = (
+  process.env.RENDERED_API_URL ?? "http://127.0.0.1:18861"
+).replace(/\/$/, "");
 
 // `consult_<x>` → profile do sub-agente. Prefixo default = bioshield-.
 const PROFILE_PREFIX = process.env.SPECIALIST_PROFILE_PREFIX ?? "bioshield-";
@@ -36,37 +34,31 @@ export function consultToolToProfile(toolName: string): string | null {
 
 /**
  * Job mais recente de um profile, criado nos últimos `maxAgeSeconds` (pra pegar
- * o do turno atual, não um antigo). Read-only — não trava o daemon que escreve.
- * Retorna null em qualquer erro (DB ausente, etc.) — o fluxo segue normal.
+ * o do turno atual, não um antigo). Via HTTP no rendered_api (apps desacopladas).
+ * Retorna null em qualquer erro/404 — o fluxo segue normal.
  */
-export function getLatestJob(profile: string, maxAgeSeconds = 60): SpecialistJob | null {
-  let db: DatabaseSync | null = null;
+export async function getLatestJob(
+  profile: string,
+  maxAgeSeconds = 60,
+): Promise<SpecialistJob | null> {
   try {
-    db = new DatabaseSync(DB_PATH, { readOnly: true });
-    const row = db
-      .prepare(
-        "SELECT job_id, status, submitted_at FROM jobs WHERE profile = ? ORDER BY rowid DESC LIMIT 1",
-      )
-      .get(profile) as
-      | { job_id?: string; status?: string; submitted_at?: string }
-      | undefined;
-    if (!row?.job_id) return null;
-    if (row.submitted_at) {
-      const age = (Date.now() - new Date(row.submitted_at).getTime()) / 1000;
-      if (Number.isFinite(age) && age > maxAgeSeconds) return null; // job velho — não é deste turno
-    }
+    const url =
+      `${RENDERED_API_BASE}/specialist-jobs/latest` +
+      `?profile=${encodeURIComponent(profile)}&max_age=${maxAgeSeconds}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return null; // 404 (none/stale), offline, etc.
+    const j = (await r.json()) as {
+      job_id?: string;
+      status?: string;
+      submitted_at?: string;
+    };
+    if (!j?.job_id) return null;
     return {
-      jobId: row.job_id,
-      status: String(row.status ?? ""),
-      submittedAt: String(row.submitted_at ?? ""),
+      jobId: j.job_id,
+      status: String(j.status ?? ""),
+      submittedAt: String(j.submitted_at ?? ""),
     };
   } catch {
     return null;
-  } finally {
-    try {
-      db?.close();
-    } catch {
-      /* ignore */
-    }
   }
 }

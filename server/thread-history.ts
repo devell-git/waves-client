@@ -135,30 +135,42 @@ export async function getThreadMessages(
 }
 
 /**
- * Busca DEGRADADA (sem FTS): o gateway ainda não expõe endpoint de busca, então
- * filtramos a lista por título/preview client-side. Não varre o corpo completo
- * das mensagens — Fase 3 reintroduz FTS via endpoint dedicado.
+ * Busca FTS real (Fase 3): usa o endpoint `/api/sessions-search` do gateway, que
+ * varre o corpo completo das mensagens (FTS5) e devolve snippet com `<mark>`. O
+ * gateway retorna matches de TODOS os tenants; filtramos pelo tenant ativo aqui.
  */
 export async function searchThreads(
   ctx: GatewayCtx,
   query: string,
   limit = 50,
 ): Promise<SearchHit[]> {
-  const terms = normalizeTerms(query);
-  if (terms.length === 0) return [];
-  const threads = await listThreads(ctx, 200);
+  const q = query.trim();
+  if (!q) return [];
+  const r = await gw(
+    ctx,
+    "GET",
+    `/api/sessions-search?q=${encodeURIComponent(q)}&limit=${limit * 3}`,
+  );
+  if (!r.ok) throw new Error(`gateway GET /api/sessions-search → ${r.status}`);
+  const j = (await r.json()) as {
+    data?: Array<{
+      session_id?: string;
+      title?: string | null;
+      snippet?: string;
+      timestamp?: number | null;
+    }>;
+  };
   const hits: SearchHit[] = [];
-  for (const t of threads) {
-    const hay = stripAccents(`${t.title ?? ""} ${t.preview ?? ""}`).toLowerCase();
-    if (terms.every((term) => hay.includes(term))) {
-      hits.push({
-        threadId: t.id,
-        title: t.title,
-        snippet: makeSnippet(t.preview ?? t.title ?? "", terms),
-        lastUpdated: t.lastUpdated,
-      });
-      if (hits.length >= limit) break;
-    }
+  for (const row of j.data ?? []) {
+    const id = row.session_id;
+    if (!id || !belongsToTenant(id, ctx.tenantSlug)) continue;
+    hits.push({
+      threadId: id,
+      title: row.title ?? null,
+      snippet: row.snippet ?? "",
+      lastUpdated: toMs(row.timestamp),
+    });
+    if (hits.length >= limit) break;
   }
   return hits;
 }
@@ -242,39 +254,4 @@ function safeJSON(s: string): unknown {
   } catch {
     return null;
   }
-}
-
-function stripAccents(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-
-function normalizeTerms(query: string): string[] {
-  return stripAccents(query)
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length >= 2);
-}
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function makeSnippet(text: string, terms: string[]): string {
-  const clean = stripFormStateWrapper(text);
-  if (!clean) return "";
-  const lower = stripAccents(clean).toLowerCase();
-  let idx = -1;
-  for (const t of terms) {
-    const i = lower.indexOf(t);
-    if (i >= 0 && (idx < 0 || i < idx)) idx = i;
-  }
-  const start = idx < 0 ? 0 : Math.max(0, idx - 30);
-  let snip = clean.slice(start, start + 160);
-  if (start > 0) snip = "…" + snip;
-  if (start + 160 < clean.length) snip = snip + "…";
-  for (const t of terms) {
-    snip = snip.replace(new RegExp(`(${escapeRe(t)})`, "gi"), "<mark>$1</mark>");
-  }
-  return snip;
 }

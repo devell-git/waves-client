@@ -48,6 +48,12 @@ export function setThreadGateway(gw: ThreadGateway | null): void {
   GW = gw;
 }
 
+/** Gateway do agent ativo (token+host+port) — reusado por outras features que
+ *  também precisam falar com o gateway por HTTP (ex.: share-recipients). */
+export function getActiveGateway(): ThreadGateway | null {
+  return GW;
+}
+
 function gwHeaders(extra?: Record<string, string>): Record<string, string> {
   const h: Record<string, string> = { ...(extra ?? {}) };
   if (GW?.token) h["Authorization"] = `Bearer ${GW.token}`;
