@@ -74,10 +74,22 @@ export default function App() {
   );
 
   const handleLogout = useCallback(() => {
+    // Evicta o token do cache dos gateways dos agents do usuário + revoga na
+    // Waves (best-effort, fire-and-forget — não atrasa a saída).
+    if (session?.accessToken) {
+      const gateways = (session.agents ?? [])
+        .filter((a) => typeof a.port === "number")
+        .map((a) => ({ host: a.host, port: a.port }));
+      void fetch("/api/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: session.accessToken, gateways }),
+      }).catch(() => {});
+    }
     clearSession();
     setSession(null);
     navigate("/login", { replace: true });
-  }, [navigate]);
+  }, [navigate, session]);
 
   if (checking) {
     return (

@@ -48,7 +48,33 @@ import {
   isCacheableTrigger,
   setCached as setFormCached,
 } from "./form-cache.js";
-import { getProfileGateway } from "./profile-routing.js";
+// Hosts de gateway Hermes permitidos além do loopback. Vazio (default) → só
+// 127.0.0.1 (deployment co-locado: gateways fazem bind em loopback e o login
+// anuncia IP público, que NÃO é roteável pelo proxy local). Quando o Hermes for
+// remoto de verdade, listar os hosts aqui (CSV) pra usar o host do login.
+const HERMES_ALLOWED_HOSTS = new Set(
+  (process.env.HERMES_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+
+/** Resolve o gateway Hermes a partir do host+port do LOGIN (sem lista hardcoded).
+ *  Anti-SSRF: porta válida + host só fora do loopback se estiver na allowlist. */
+export function resolveHermesGateway(
+  host?: string,
+  port?: number,
+):
+  | { ok: true; baseURL: string }
+  | { ok: false; status: number; error: string } {
+  const p = Number(port);
+  if (!Number.isInteger(p) || p < 1 || p > 65535) {
+    return { ok: false, status: 400, error: `Porta de gateway inválida: ${String(port)}` };
+  }
+  const h = (host || "").trim();
+  const useHost = h && HERMES_ALLOWED_HOSTS.has(h) ? h : "127.0.0.1";
+  return { ok: true, baseURL: `http://${useHost}:${p}/v1` };
+}
 import { clearProgress, setProgress } from "./tool-progress.js";
 import { consultToolToProfile, getLatestJob } from "./specialist-jobs.js";
 
@@ -503,6 +529,12 @@ interface ChatRequestBody {
    * Default = `ybrax-negative-media`. Define qual gateway recebe a request.
    */
   profile?: string;
+  /** Host do gateway do agente (vindo do LOGIN). Só é usado se estiver na
+   *  allowlist HERMES_ALLOWED_HOSTS; caso contrário cai em 127.0.0.1 (gateways
+   *  co-locados fazem bind em loopback). */
+  host?: string;
+  /** Porta do gateway do agente (vinda do LOGIN). Determina qual gateway recebe. */
+  port?: number;
   /**
    * UUID curto da thread/conversa atual. Quando presente, vira sufixo do
    * sessionId enviado pro Hermes (`waves-user-1::<threadId>`), permitindo
@@ -896,24 +928,28 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
     });
   }
 
-  // Hermes backend — múltiplos profiles suportados (negative-media, map).
-  // O `body.profile` determina qual gateway/baseURL/apiKey usar. Cada profile
-  // tem seu próprio api_server numa porta diferente. Default = negative-media.
+  // Hermes backend — apps desacopladas: o alvo (porta) vem do LOGIN (não há
+  // lista de profiles no servidor). A auth é o token Waves do PRÓPRIO usuário
+  // (não a api_key do gateway). Ver resolveHermesGateway().
   if (provider === "hermes") {
     const cacheTrigger = (body as ChatRequestBody & { __cacheTrigger?: string })
       .__cacheTrigger;
-    let gw;
-    try {
-      gw = getProfileGateway(body.profile);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+    const gw = resolveHermesGateway(body.host, body.port);
+    if (!gw.ok) {
       return new Response(
-        JSON.stringify({ error: `Profile inválido: ${msg}` }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
+        JSON.stringify({ error: gw.error }),
+        { status: gw.status, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const userToken = wavesSession?.accessToken;
+    if (!userToken) {
+      return new Response(
+        JSON.stringify({ error: "Sessão sem token de usuário" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
       );
     }
     return handleChatRequestHermes({
-      apiKey: gw.apiKey,
+      apiKey: userToken,
       baseURL: gw.baseURL,
       messages,
       threadId: body.threadId,
@@ -924,7 +960,7 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
       userScope: body.userScope ?? null,
       cacheTrigger,
       wantUsage: body.wantUsage === true,
-      profileId: gw.id,
+      profileId: body.profile,
     });
   }
 

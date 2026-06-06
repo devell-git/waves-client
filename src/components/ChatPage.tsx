@@ -20,6 +20,9 @@ import { shadcnChatLibrary } from "../lib/shadcn-genui";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { UserMessageView } from "./UserMessageView";
+import { NotificationBell } from "./NotificationBell";
+import { FilePreviewer } from "./FilePreviewer";
+import { ShareFileDialog } from "./ShareFileDialog";
 import type { UploadedFile } from "../api/uploads";
 import {
   buildConversationStarters,
@@ -37,11 +40,9 @@ import { TaskCreateModal } from "./TaskCreateModal";
 import {
   ProfileSelect,
   type ProfileOption,
-  buildProfilesFromLogin,
   loadActiveProfileId,
   saveActiveProfileId,
 } from "./ProfileSelect";
-import type { RegistryProfile } from "./ProfileTabs";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import {
   createThreadApiAdapters,
@@ -739,30 +740,21 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   void runtime;
   void skills;
 
-  // Registry de profiles roteáveis (servidor) — casado com os agentes do login.
-  const [registry, setRegistry] = useState<RegistryProfile[]>([]);
-  useEffect(() => {
-    let alive = true;
-    // no-store: todo (re)load — inclusive hard reload — refaz a busca dos
-    // profiles direto no servidor, sem servir cache antigo do browser.
-    fetch("/api/profiles", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (alive && Array.isArray(d?.profiles)) setRegistry(d.profiles);
-      })
-      .catch(() => {
-        /* sem registry → seletor fica vazio até o servidor responder */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Só aparecem os agentes que vieram no LOGIN e têm gateway roteável
-  // (casados por porta). Rótulo = nome do login; id = profile Hermes real.
+  // Select 100% do LOGIN: cada usuário vê o conjunto de agents que a Waves
+  // retornou. Apps desacopladas — NÃO há registry/lista no servidor. O id é o
+  // profile_name; o gateway alvo (host+port, do próprio agent) viaja no body do
+  // /api/chat. Rótulo = nome do login.
   const availableProfiles = useMemo<ProfileOption[]>(
-    () => buildProfilesFromLogin(registry, session.agents ?? []),
-    [registry, session.agents],
+    () =>
+      (session.agents ?? [])
+        .filter((a) => a.active !== false && typeof a.port === "number")
+        .map((a) => ({
+          id: a.profile_name ?? String(a.id),
+          label: a.name ?? a.page_title ?? a.profile_name ?? String(a.id),
+          description: `${a.profile_name ?? ""}${a.port ? ` · :${a.port}` : ""}`,
+          port: a.port,
+        })),
+    [session.agents],
   );
 
   // Profile selecionado. Validado contra os disponíveis assim que o login resolve.
@@ -1005,6 +997,10 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         const payload = JSON.stringify({
           messages: openAIMessageFormat.toApi(messages),
           profile: activeProfile,
+          // Gateway alvo vem do agente do LOGIN (host+port). O servidor roteia
+          // por isso (sem lista hardcoded) e autentica com o token do usuário.
+          host: activeAgent?.host,
+          port: activeAgent?.port,
           // Continuidade de conversa: o runtime às vezes passa threadId vazio/
           // "default" em conversas novas → o backend cairia num session efêmero
           // (sem histórico). Usa o activeThreadId persistido (por profile) como
@@ -1159,6 +1155,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             <ThreadSelector targetThreadId={activeThreadId} />
             <ThreadRestorer profileId={activeProfile} fullThreadKey={fullThreadKey} />
             <ChatAppendListener />
+            <ShareFileDialog profile={activeProfile} userId={String(session.user.id)} />
+            <NotificationBell profile={activeProfile} userId={String(session.user.id)} />
+            <FilePreviewer profile={activeProfile} />
             {mobileNavOpen && (
               <div
                 className="chat-shell-nav-overlay"

@@ -11,7 +11,7 @@ import {
   getOpenAiProvider,
   maskSecret,
 } from "./load-env.js";
-import { handleChatRequest } from "./chat.js";
+import { handleChatRequest, resolveHermesGateway } from "./chat.js";
 import { listProfiles } from "./profile-routing.js";
 import {
   getActiveTenant,
@@ -32,6 +32,21 @@ import { DEFAULT_OPENAI_MODEL } from "./waves-prompt.js";
 import { loadOpenUISpec } from "./openui-spec.js";
 import { uploadsRouter } from "./uploads.js";
 import { ensureFilesDir, filesRouter } from "./files.js";
+import {
+  createNotification,
+  listNotifications,
+  unreadCount,
+  markRead,
+  markAllRead,
+} from "./notifications.js";
+import {
+  isCacheableWaves,
+  wavesCacheKey,
+  getWavesCache,
+  setWavesCache,
+} from "./waves-cache.js";
+import { getWavesUser, type WavesSession } from "./waves-client.js";
+import { userIdFromBearer } from "./auth-user.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -110,12 +125,25 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   const upstreamPath = req.url.replace(/^\/api\/waves/, "") || "/";
   const url = `${tenant.url}${upstreamPath}`;
 
+  // Cache READ por usuário (combate 429): statistics/* e lista de workflows.
+  const auth = req.headers.authorization as string | undefined;
+  const cacheable = isCacheableWaves(req.method, upstreamPath);
+  const ckey = cacheable ? wavesCacheKey(tenant.id, auth, upstreamPath) : "";
+  if (cacheable) {
+    const hit = getWavesCache(ckey);
+    if (hit) {
+      if (hit.contentType) res.setHeader("content-type", hit.contentType);
+      res.setHeader("X-Waves-Cache", "HIT");
+      return res.status(200).end(hit.body);
+    }
+  }
+
   const headers: Record<string, string> = {
     "X-API-KEY": tenant.key,
     Accept: "application/json",
   };
-  if (req.headers.authorization) {
-    headers.Authorization = req.headers.authorization as string;
+  if (auth) {
+    headers.Authorization = auth;
   }
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   if (hasBody) headers["Content-Type"] = "application/json";
@@ -126,11 +154,14 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
       init.body = JSON.stringify(req.body ?? {});
     }
     const upstream = await fetch(url, init);
-    console.log(`[waves-proxy] ${req.method} ${upstreamPath} → ${upstream.status}`);
+    console.log(
+      `[waves-proxy] ${req.method} ${upstreamPath} → ${upstream.status}${cacheable ? " (miss)" : ""}`,
+    );
     res.status(upstream.status);
     const ct = upstream.headers.get("content-type");
     if (ct) res.setHeader("content-type", ct);
     const buf = Buffer.from(await upstream.arrayBuffer());
+    if (cacheable) setWavesCache(ckey, upstream.status, ct, buf);
     res.end(buf);
   } catch (err) {
     console.error(`[waves-proxy] ${req.method} ${url} →`, err);
@@ -391,6 +422,155 @@ app.delete("/api/threads/:id", (req, res) => {
   }
 });
 
+// --- Notificações (o "sino") -------------------------------------------------
+// Escopo por (profile, user_id) — o front passa ambos. Base p/ Task 722 (alerta
+// de task atribuída) e Task 724 (compartilhamento de arquivo). O sino polla o GET.
+// tenant derivado do HOST (não do cliente) — isolamento multi-tenant.
+const notifTenant = () => getActiveTenant().id;
+
+app.get("/api/notifications", async (req, res) => {
+  const profile = String(req.query.profile ?? "");
+  const userId = String(req.query.user_id ?? "");
+  if (!profile || !userId) return res.status(400).json({ error: "profile and user_id required" });
+  // AUTH: só lê as PRÓPRIAS notificações (o user_id vem do token, não da query).
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
+  if (String(me) !== userId) return res.status(403).json({ error: "Sem permissão." });
+  try {
+    const tenant = notifTenant();
+    res.json({
+      notifications: listNotifications(tenant, profile, userId, 50),
+      unread: unreadCount(tenant, profile, userId),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Criar notificação (uso interno: atribuição de task / compartilhamento criam via
+// createNotification server-side). HTTP exige usuário autenticado (anti-spam).
+app.post("/api/notifications", async (req, res) => {
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const profile = String(b.profile ?? "");
+  const userId = String(b.user_id ?? "");
+  const title = String(b.title ?? "");
+  if (!profile || !userId || !title)
+    return res.status(400).json({ error: "profile, user_id, title required" });
+  try {
+    const id = createNotification({
+      tenant: notifTenant(),
+      profile,
+      userId,
+      type: b.type ? String(b.type) : undefined,
+      title,
+      body: b.body != null ? String(b.body) : undefined,
+      data: b.data,
+    });
+    res.json({ id });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post("/api/notifications/read-all", async (req, res) => {
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const profile = String(b.profile ?? req.query.profile ?? "");
+  if (!profile) return res.status(400).json({ error: "profile required" });
+  res.json({ updated: markAllRead(notifTenant(), profile, String(me)) });
+});
+
+app.post("/api/notifications/:id/read", async (req, res) => {
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const profile = String(b.profile ?? req.query.profile ?? "");
+  if (!profile) return res.status(400).json({ error: "profile required" });
+  res.json({ ok: markRead(notifTenant(), profile, String(me), Number(req.params.id)) });
+});
+
+// Destinatários p/ compartilhar arquivo: usuários que já logaram NESTE agente
+// (web-sessions do profile). Exige usuário autenticado.
+app.get("/api/share-recipients", async (req, res) => {
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
+  const profile = String(req.query.profile ?? "");
+  if (!/^[a-z0-9-]+$/i.test(profile)) return res.status(400).json({ error: "profile inválido" });
+  try {
+    const dir = resolve("/home/bot/.hermes/profiles", profile, "state", "web-sessions");
+    const seen = new Set<string>();
+    const recipients: { user_id: string; name: string }[] = [];
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const s = JSON.parse(readFileSync(resolve(dir, f), "utf8")) as Record<string, unknown>;
+        const uid = String(s.user_id ?? "");
+        if (uid && !seen.has(uid)) {
+          seen.add(uid);
+          recipients.push({
+            user_id: uid,
+            name: String(s.user_name ?? s.email ?? `Usuário ${uid}`),
+          });
+        }
+      } catch {
+        /* ignora sessão inválida */
+      }
+    }
+    recipients.sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ recipients });
+  } catch {
+    res.json({ recipients: [] });
+  }
+});
+
+// Compartilhar um DOCUMENTO da Waves (já registrado — temos o document_id).
+// Diferente do /api/files: o doc vive na Waves; o destinatário acessa o PDF com
+// o token DELE (permissão governada pela Waves). Aqui validamos o remetente e
+// criamos a notificação `file_shared` (com document_id) no sino do destinatário.
+app.post("/api/documents/:docId/share", async (req, res) => {
+  const authHeader = req.headers.authorization as string | undefined;
+  const m = authHeader?.match(/^Bearer\s+(.+)$/i);
+  const token = m ? m[1].trim() : null;
+  if (!token) return res.status(401).json({ error: "Bearer ausente." });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const toUserId = Number(b.to_user_id);
+  const profile = String(b.profile ?? "");
+  const fileName = String(b.file_name ?? "Documento");
+  if (!toUserId || !profile) {
+    return res.status(400).json({ error: "to_user_id e profile obrigatórios." });
+  }
+  let fromName = "Alguém";
+  try {
+    const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
+    const user = (await getWavesUser({ environment: env, accessToken: token })) as {
+      id: number;
+      name?: string;
+      email?: string;
+    };
+    fromName = user.name || user.email || `Usuário ${user.id}`;
+  } catch {
+    return res.status(401).json({ error: "Token inválido." });
+  }
+  createNotification({
+    tenant: getActiveTenant().id,
+    profile,
+    userId: toUserId,
+    type: "file_shared",
+    title: `${fromName} compartilhou um documento`,
+    body: fileName,
+    data: {
+      document_id: req.params.docId,
+      file_name: fileName,
+      mime: "application/pdf",
+      from: fromName,
+    },
+  });
+  res.json({ ok: true });
+});
+
 // Progress da tool em execução no Hermes — frontend polla durante o stream
 // pra mostrar no ThinkingIndicator. Retorna null quando nada está em
 // execução ou quando o último progress está stale (>10s).
@@ -570,6 +750,57 @@ app.post("/api/chat", async (req, res) => {
       error: error instanceof Error ? error.message : "Erro interno no chat.",
     });
   }
+});
+
+// Logout: evicta o token do cache de cada gateway do usuário (host+port vindos
+// do login) e revoga o token na Waves. Best-effort — falha por-gateway não bloqueia.
+app.post("/api/logout", async (req, res) => {
+  const body = (req.body ?? {}) as {
+    token?: string;
+    gateways?: Array<{ host?: string; port?: number }>;
+  };
+  const token = typeof body.token === "string" ? body.token : "";
+  const gateways = Array.isArray(body.gateways) ? body.gateways : [];
+  if (!token) {
+    return res.status(400).json({ error: "token ausente" });
+  }
+  // Resolve o tenant direto do Host do request (não via ALS — handler async).
+  const tenant =
+    resolveTenantByHost(
+      (req.headers["x-forwarded-host"] as string) || req.headers.host,
+    ) ?? null;
+  // 1) Evict em cada gateway (loopback por padrão; mesma resolução do chat).
+  await Promise.allSettled(
+    gateways.map(async (g) => {
+      const gw = resolveHermesGateway(g.host, g.port);
+      if (!gw.ok) return;
+      await fetch(`${gw.baseURL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+    }),
+  );
+  // 2) Revoga o token na Waves (tenant resolvido por host).
+  try {
+    if (tenant && isTenantResolved(tenant) && tenant.url) {
+      const r = await fetch(`${tenant.url}/logout`, {
+        method: "POST",
+        headers: {
+          "X-API-KEY": tenant.key ?? "",
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!r.ok) console.warn(`[logout] Waves revoke → HTTP ${r.status}`);
+    } else {
+      console.warn("[logout] tenant não resolvido — revoke pulado");
+    }
+  } catch (e) {
+    console.warn(`[logout] Waves revoke falhou: ${e instanceof Error ? e.message : e}`);
+  }
+  res.json({ ok: true });
 });
 
 // --- Serve static build (SPA) ----------------------------------------------
