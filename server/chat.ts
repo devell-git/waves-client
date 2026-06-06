@@ -1421,6 +1421,7 @@ function persistWebSessionToken(
   userId: number | string | undefined,
   wavesSession: WavesSession | undefined,
   user: HandleHermesOptions["user"],
+  tenant: string | undefined,
 ): void {
   try {
     if (!profileId || !HARD_PATH_PROFILES.has(profileId)) return;
@@ -1434,6 +1435,9 @@ function persistWebSessionToken(
       user_name: user?.name ?? null,
       access_token: wavesSession.accessToken,
       environment: wavesSession.environment ?? null,
+      // slug do tenant → o MCP resolve api_url/api_key no tenants.json do Hermes
+      // (multi-tenant). NÃO grava api_key aqui.
+      tenant: tenant ?? null,
       updated_at: new Date().toISOString(),
     };
     const file = join(dir, `${userId}.json`);
@@ -1482,7 +1486,7 @@ async function handleChatRequestHermes(
 
   // Hard path: grava o token do usuário pra o profile consultar a Waves escopado
   // (só pros profiles na allowlist; cada um na sua própria pasta).
-  persistWebSessionToken(profileId, user?.id, wavesSession, user);
+  persistWebSessionToken(profileId, user?.id, wavesSession, user, getActiveTenant().id);
 
   // 1. (REMOVIDO 2026-05-26) Antes carregava spec OpenUI da Waves a cada
   //    request pra montar `toolsHint` no system_prompt. Mas:
