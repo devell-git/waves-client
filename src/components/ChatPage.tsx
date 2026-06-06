@@ -31,7 +31,6 @@ import {
   type UserScope,
 } from "../api/user-scope";
 import { fetchRuntime, type RuntimeInfo, type ProfileStarter } from "../api/runtime";
-import { fetchSkills, type SkillMeta } from "../api/skills";
 import { SidebarUserFooter } from "./SidebarUserFooter";
 import { SidebarThreadHistory } from "./SidebarThreadHistory";
 import { Toaster, toast } from "sonner";
@@ -49,6 +48,7 @@ import {
   newThreadId,
   getThreadMessages,
   toOpenUIMessage,
+  setThreadGateway,
 } from "../api/threads";
 import { JobProgressCard, parseCheckJob, stripJobMarker } from "./JobProgressCard";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
@@ -690,7 +690,6 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   setAdminFlag(isAdminUser(session.roles, session.user.type));
   const [userScope, setUserScope] = useState<UserScope | null>(null);
   const [scopeError, setScopeError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   // Logos do tenant (do /api/tenant, resolvido por host). SEM fallback: ou o
   // tenant tem logo, ou não renderiza nada — nunca um logo hardcoded de outro.
@@ -703,14 +702,12 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     let cancelled = false;
     async function loadAll() {
       try {
-        const [scope, skillsList, runtimeInfo] = await Promise.all([
+        const [scope, runtimeInfo] = await Promise.all([
           fetchUserScope(session),
-          fetchSkills(),
           fetchRuntime(),
         ]);
         if (!cancelled) {
           setUserScope(scope);
-          setSkills(skillsList);
           setRuntime(runtimeInfo);
           setScopeError(null);
         }
@@ -738,7 +735,6 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
 
   void buildConversationStarters;
   void runtime;
-  void skills;
 
   // Select 100% do LOGIN: cada usuário vê o conjunto de agents que a Waves
   // retornou. Apps desacopladas — NÃO há registry/lista no servidor. O id é o
@@ -938,6 +934,17 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     return (session.agents ?? []).find((a) => a.port === port);
   }, [activeProfile, availableProfiles, session.agents]);
 
+  // Apps desacopladas: o histórico (threads) é lido do gateway por HTTP. O
+  // cliente de threads precisa do Bearer do usuário + host/port do agent ativo
+  // pra o server rotear. Setamos no PRÓPRIO render (não em effect) pra que o
+  // primeiro fetch de histórico — disparado por effect do provider — já tenha
+  // auth; é idempotente (só atualiza um singleton de config no módulo).
+  setThreadGateway(
+    session.accessToken
+      ? { token: session.accessToken, host: activeAgent?.host, port: activeAgent?.port }
+      : null,
+  );
+
   // Aba interna (só temos a página de chat) → "Chat | <nome do agente>".
   // Nome do agente vem do cadastro (page_title/title/name). Sem agente → "Chat".
   // (A tela de login usa o nome do tenant — definido no App.tsx.)
@@ -1115,7 +1122,6 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             {getEnvironmentLabel()}
             {persona && <> · {personaLabel(persona)}</>}
             {userScope && <> · {formatScopeMeta(userScope)}</>}
-            {skills.length > 0 && <> · {skills.length} skills (Steve)</>}
           </span>
           {scopeError && (
             <span className="chat-shell-meta" style={{ color: "var(--color-error, #c00)" }}>

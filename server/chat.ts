@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.mjs";
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { extname } from "node:path";
 import {
   getOpenAiCredential,
   getOpenAiBaseUrl,
@@ -1402,44 +1402,6 @@ interface HandleHermesOptions {
   profileId?: string;
 }
 
-// Persiste o Bearer do usuário logado pra que o MCP do profile consulte a Waves
-// com o token DELE (a Waves filtra server-side: 200 no escopo, 403 fora). Grava
-// a cada request (sempre o mais fresco), só-local, chmod 600. Escreve pro profile
-// ATIVO da request — o profile vem do login, não de allowlist/config.
-const HERMES_PROFILES_ROOT = "/home/bot/.hermes/profiles";
-
-function persistWebSessionToken(
-  profileId: string | undefined,
-  userId: number | string | undefined,
-  wavesSession: WavesSession | undefined,
-  user: HandleHermesOptions["user"],
-  tenant: string | undefined,
-): void {
-  try {
-    // Grava pro profile ATIVO da request (o profile vem do login, não de config).
-    if (!profileId) return;
-    if (userId == null || !wavesSession?.accessToken) return;
-    // grava na pasta do PRÓPRIO profile (não vaza token entre profiles)
-    const dir = join(HERMES_PROFILES_ROOT, profileId, "state", "web-sessions");
-    mkdirSync(dir, { recursive: true });
-    const payload = {
-      user_id: userId,
-      email: user?.email ?? null,
-      user_name: user?.name ?? null,
-      access_token: wavesSession.accessToken,
-      environment: wavesSession.environment ?? null,
-      // slug do tenant → o MCP resolve api_url/api_key no tenants.json do Hermes
-      // (multi-tenant). NÃO grava api_key aqui.
-      tenant: tenant ?? null,
-      updated_at: new Date().toISOString(),
-    };
-    const file = join(dir, `${userId}.json`);
-    writeFileSync(file, JSON.stringify(payload), { mode: 0o600 });
-  } catch (e) {
-    console.warn(`[chat] persistWebSessionToken falhou:`, e);
-  }
-}
-
 /**
  * Economia de tokens: as respostas `assistant` antigas são openui-lang longo
  * (um kanban = vários k tokens). O modelo raramente precisa da UI antiga
@@ -1477,9 +1439,10 @@ async function handleChatRequestHermes(
   const elapsed = () => `${Date.now() - t0}ms`;
   console.log(`[chat:timing] ${elapsed()} - handler start (user=${user?.id ?? "anon"}, thread=${threadId ?? "—"})`);
 
-  // Hard path: grava o token do usuário pra o profile consultar a Waves escopado
-  // (só pros profiles na allowlist; cada um na sua própria pasta).
-  persistWebSessionToken(profileId, user?.id, wavesSession, user, getActiveTenant().id);
+  // Token do usuário → MCP: NÃO gravamos mais o web-sessions daqui. O GATEWAY
+  // Hermes persiste o Bearer (que ele já recebe no Authorization) em
+  // state/web-sessions/<id>.json no _check_auth — apps desacopladas, o client
+  // não toca o FS do Hermes. (ver hermes-patches: _persist_web_session.)
 
   // 1. (REMOVIDO 2026-05-26) Antes carregava spec OpenUI da Waves a cada
   //    request pra montar `toolsHint` no system_prompt. Mas:

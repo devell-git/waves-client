@@ -1,7 +1,7 @@
 import "./load-env.js";
 import cors from "cors";
 import express from "express";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ import {
   listThreads,
   searchThreads,
   updateThreadTitle,
+  type GatewayCtx,
 } from "./thread-history.js";
 import { getProgress } from "./tool-progress.js";
 import { DEFAULT_OPENAI_MODEL } from "./waves-prompt.js";
@@ -171,88 +172,6 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   }
 });
 
-// --- Skills do profile Steve ---------------------------------------------
-// Lê SKILL.md das pastas externas declaradas no config.yaml do Steve
-// (bioshield + waves + shared) e do hub install. Retorna metadata pra UI.
-//
-// O caminho do hub muda por profile — pra Steve tá em workspace/BioShield/...
-// Pra robusto: lista todas as pastas dentro de cada root, abre SKILL.md, extrai
-// YAML frontmatter (name, description, category opcional).
-
-const STEVE_SKILL_DIRS = [
-  resolve(homedir(), ".hermes/skills/bioshield"),
-  resolve(homedir(), ".hermes/skills/waves"),
-  resolve(homedir(), ".hermes/skills/shared"),
-  resolve(homedir(), "workspace/BioShield/profiles/hermes/hermes-bioshield-steve/skills"),
-];
-
-interface SkillMeta {
-  name: string;
-  description: string;
-  category?: string;
-  source: string; // pasta de origem
-  path: string;   // caminho absoluto do diretório
-}
-
-function parseSkillFrontmatter(md: string): {
-  name?: string;
-  description?: string;
-  category?: string;
-} {
-  // Extrai bloco entre `---` na primeira linha
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return {};
-  const block = m[1];
-  const out: Record<string, string> = {};
-  for (const line of block.split("\n")) {
-    const kv = line.match(/^([a-zA-Z_-]+)\s*:\s*(.+?)\s*$/);
-    if (!kv) continue;
-    let v = kv[2].trim();
-    // Remove aspas
-    if (
-      (v.startsWith('"') && v.endsWith('"')) ||
-      (v.startsWith("'") && v.endsWith("'"))
-    ) {
-      v = v.slice(1, -1);
-    }
-    out[kv[1].toLowerCase()] = v;
-  }
-  return out;
-}
-
-function listSkillsFromDir(dir: string): SkillMeta[] {
-  if (!existsSync(dir)) return [];
-  const out: SkillMeta[] = [];
-  for (const name of readdirSync(dir)) {
-    const skillPath = resolve(dir, name);
-    let stat;
-    try {
-      stat = statSync(skillPath);
-    } catch {
-      continue;
-    }
-    if (!stat.isDirectory()) continue;
-    const mdPath = resolve(skillPath, "SKILL.md");
-    if (!existsSync(mdPath)) continue;
-    let content: string;
-    try {
-      content = readFileSync(mdPath, "utf-8");
-    } catch {
-      continue;
-    }
-    const fm = parseSkillFrontmatter(content);
-    if (!fm.name) continue;
-    out.push({
-      name: fm.name,
-      description: fm.description ?? "(sem descrição)",
-      category: fm.category,
-      source: dir.split("/").slice(-1)[0],
-      path: skillPath,
-    });
-  }
-  return out;
-}
-
 // --- Runtime info (profile detectado + starters contextuais) -------------
 // Permite o frontend mostrar conversation starters apropriados pro profile
 // ativo. Profile inferido pela porta do HERMES_BASE_URL — sem hardcode no
@@ -354,64 +273,87 @@ app.get("/api/runtime", (req, res) => {
 
 
 // ─── Histórico de conversas (threads) ──────────────────────────────────
-// Cada profile tem seu próprio state.db. As rotas aqui leem/escrevem nele
-// pra listar, buscar, retomar, renomear e excluir conversas.
+// Apps DESACOPLADAS: o client NÃO toca o filesystem do Hermes. Estas rotas
+// falam com o gateway do agent (host:port do login) por HTTP, autenticadas com
+// o Bearer do próprio usuário. O `GatewayCtx` é montado a partir da request.
 
-app.get("/api/threads", (req, res) => {
-  const profile = String(req.query.profile ?? "");
-  if (!profile) return res.status(400).json({ error: "profile required" });
+function buildThreadCtx(
+  authHeader: string | undefined,
+  host: unknown,
+  port: unknown,
+):
+  | { ok: true; ctx: GatewayCtx }
+  | { ok: false; status: number; error: string } {
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  if (!token) return { ok: false, status: 401, error: "Bearer ausente." };
+  const gw = resolveHermesGateway(
+    host ? String(host) : undefined,
+    port != null ? Number(port) : undefined,
+  );
+  if (!gw.ok) return { ok: false, status: gw.status, error: gw.error };
+  // baseURL vem com /v1 (chat); os endpoints de sessão ficam na raiz (/api/...).
+  const root = gw.baseURL.replace(/\/v1$/, "");
+  const slug = getActiveTenant().id;
+  // session-id carrega só o SLUG (p/ a auth multi-tenant resolver o tenant);
+  // o uid não importa aqui (a lista é filtrada pelo prefixo do tenant).
+  return { ok: true, ctx: { root, token, sessionId: `waves-${slug}-user-0`, tenantSlug: slug } };
+}
+
+app.get("/api/threads", async (req, res) => {
+  const b = buildThreadCtx(req.headers.authorization as string | undefined, req.query.host, req.query.port);
+  if (!b.ok) return res.status(b.status).json({ error: b.error });
   try {
-    const threads = listThreads(profile, 200);
+    const threads = await listThreads(b.ctx, 200);
     res.json({ threads });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-app.get("/api/threads/search", (req, res) => {
-  const profile = String(req.query.profile ?? "");
+app.get("/api/threads/search", async (req, res) => {
+  const b = buildThreadCtx(req.headers.authorization as string | undefined, req.query.host, req.query.port);
+  if (!b.ok) return res.status(b.status).json({ error: b.error });
   const q = String(req.query.q ?? "");
-  if (!profile) return res.status(400).json({ error: "profile required" });
   try {
-    const hits = searchThreads(profile, q, 50);
+    const hits = await searchThreads(b.ctx, q, 50);
     res.json({ hits });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-app.get("/api/threads/:id/messages", (req, res) => {
-  const profile = String(req.query.profile ?? "");
-  if (!profile) return res.status(400).json({ error: "profile required" });
+app.get("/api/threads/:id/messages", async (req, res) => {
+  const b = buildThreadCtx(req.headers.authorization as string | undefined, req.query.host, req.query.port);
+  if (!b.ok) return res.status(b.status).json({ error: b.error });
   try {
-    const messages = getThreadMessages(profile, req.params.id);
+    const messages = await getThreadMessages(b.ctx, req.params.id);
     res.json({ messages });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-app.patch("/api/threads/:id", (req, res) => {
-  const profile = String(req.query.profile ?? "");
+app.patch("/api/threads/:id", async (req, res) => {
+  const b = buildThreadCtx(req.headers.authorization as string | undefined, req.query.host, req.query.port);
+  if (!b.ok) return res.status(b.status).json({ error: b.error });
   const title = String((req.body as { title?: unknown })?.title ?? "");
-  if (!profile) return res.status(400).json({ error: "profile required" });
   if (!title.trim()) return res.status(400).json({ error: "title required" });
   try {
-    const ok = updateThreadTitle(profile, req.params.id, title);
+    const ok = await updateThreadTitle(b.ctx, req.params.id, title);
     res.json({ ok });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-app.delete("/api/threads/:id", (req, res) => {
-  const profile = String(req.query.profile ?? "");
-  if (!profile) return res.status(400).json({ error: "profile required" });
+app.delete("/api/threads/:id", async (req, res) => {
+  const b = buildThreadCtx(req.headers.authorization as string | undefined, req.query.host, req.query.port);
+  if (!b.ok) return res.status(b.status).json({ error: b.error });
   try {
-    const ok = deleteThread(profile, req.params.id);
+    const ok = await deleteThread(b.ctx, req.params.id);
     res.json({ ok });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -611,103 +553,6 @@ app.get("/api/openui/spec", async (_req, res) => {
   } catch (err) {
     res.status(502).json({
       error: err instanceof Error ? err.message : "spec unavailable",
-    });
-  }
-});
-
-app.get("/api/skills", (_req, res) => {
-  const seen = new Set<string>();
-  const all: SkillMeta[] = [];
-  for (const dir of STEVE_SKILL_DIRS) {
-    for (const s of listSkillsFromDir(dir)) {
-      // dedupe por nome — primeira ocorrência vence
-      if (seen.has(s.name)) continue;
-      seen.add(s.name);
-      all.push(s);
-    }
-  }
-  all.sort((a, b) => a.name.localeCompare(b.name));
-  res.json({ count: all.length, skills: all });
-});
-
-app.get("/api/skills/:name", (req, res) => {
-  const name = req.params.name;
-  for (const dir of STEVE_SKILL_DIRS) {
-    const skillDir = resolve(dir, name);
-    const mdPath = resolve(skillDir, "SKILL.md");
-    if (!existsSync(mdPath)) continue;
-    try {
-      const content = readFileSync(mdPath, "utf-8");
-      const fm = parseSkillFrontmatter(content);
-      return res.json({
-        name,
-        description: fm.description ?? null,
-        category: fm.category ?? null,
-        source: dir.split("/").slice(-1)[0],
-        path: skillDir,
-        content,
-      });
-    } catch (err) {
-      return res.status(500).json({
-        error: err instanceof Error ? err.message : "read failed",
-      });
-    }
-  }
-  return res.status(404).json({ error: `Skill '${name}' não encontrada.` });
-});
-
-// POST /api/skills/:name/start — wrapper que injeta mensagem natural pro Steve
-// disparar a skill (Discovery → Activation → Execution). Streama via /api/chat
-// reaproveitando o pipeline OpenUI/Hermes existente.
-app.post("/api/skills/:name/start", async (req, res) => {
-  const name = req.params.name;
-  const params = req.body?.params;
-  const wavesSession = req.body?.wavesSession;
-  const user = req.body?.user;
-
-  // Confirma que a skill existe
-  let skillExists = false;
-  for (const dir of STEVE_SKILL_DIRS) {
-    if (existsSync(resolve(dir, name, "SKILL.md"))) {
-      skillExists = true;
-      break;
-    }
-  }
-  if (!skillExists) {
-    return res.status(404).json({ error: `Skill '${name}' não encontrada.` });
-  }
-
-  // Mensagem natural: ativa o Steve via Discovery natural-language.
-  const paramsStr =
-    params && Object.keys(params).length > 0
-      ? `\n\nParâmetros:\n\`\`\`json\n${JSON.stringify(params, null, 2)}\n\`\`\``
-      : "";
-  const prompt = `Execute a skill \`${name}\`.${paramsStr}\n\nRetorne o resultado em openui-lang (Card + componentes).`;
-
-  // Redireciona pro /api/chat — mesmo SSE protocol
-  const chatBody = {
-    messages: [{ role: "user", content: prompt }],
-    wavesSession,
-    user,
-  };
-  try {
-    const { handleChatRequest } = await import("./chat.js");
-    const response = await handleChatRequest(chatBody);
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-    if (response.body) {
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
-      }
-    }
-    res.end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      error: err instanceof Error ? err.message : "skill start failed",
     });
   }
 });

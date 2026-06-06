@@ -33,16 +33,45 @@ export interface ThreadMessage {
   timestamp: number;
 }
 
+// ── Contexto do gateway (token + host/port do agent ativo) ──────────────────
+// Apps DESACOPLADAS: o histórico vem do gateway Hermes por HTTP (não mais do
+// filesystem). O server precisa do Bearer do usuário + host/port do agent pra
+// rotear. O ChatPage chama `setThreadGateway` quando o agent/sessão muda.
+interface ThreadGateway {
+  token: string;
+  host?: string;
+  port?: number;
+}
+let GW: ThreadGateway | null = null;
+
+export function setThreadGateway(gw: ThreadGateway | null): void {
+  GW = gw;
+}
+
+function gwHeaders(extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { ...(extra ?? {}) };
+  if (GW?.token) h["Authorization"] = `Bearer ${GW.token}`;
+  return h;
+}
+
+function gwQuery(profileId: string): string {
+  const p = new URLSearchParams();
+  if (profileId) p.set("profile", profileId);
+  if (GW?.host) p.set("host", GW.host);
+  if (GW?.port != null) p.set("port", String(GW.port));
+  return p.toString();
+}
+
 export async function listThreads(profileId: string): Promise<ThreadSummary[]> {
-  const r = await fetch(`/api/threads?profile=${encodeURIComponent(profileId)}`);
+  const r = await fetch(`/api/threads?${gwQuery(profileId)}`, { headers: gwHeaders() });
   if (!r.ok) return [];
   const j = (await r.json()) as { threads?: ThreadSummary[] };
   return j.threads ?? [];
 }
 
 export async function searchThreads(profileId: string, query: string): Promise<SearchHit[]> {
-  const url = `/api/threads/search?profile=${encodeURIComponent(profileId)}&q=${encodeURIComponent(query)}`;
-  const r = await fetch(url);
+  const url = `/api/threads/search?${gwQuery(profileId)}&q=${encodeURIComponent(query)}`;
+  const r = await fetch(url, { headers: gwHeaders() });
   if (!r.ok) return [];
   const j = (await r.json()) as { hits?: SearchHit[] };
   return j.hits ?? [];
@@ -52,8 +81,8 @@ export async function getThreadMessages(
   profileId: string,
   threadId: string,
 ): Promise<ThreadMessage[]> {
-  const url = `/api/threads/${encodeURIComponent(threadId)}/messages?profile=${encodeURIComponent(profileId)}`;
-  const r = await fetch(url);
+  const url = `/api/threads/${encodeURIComponent(threadId)}/messages?${gwQuery(profileId)}`;
+  const r = await fetch(url, { headers: gwHeaders() });
   if (!r.ok) return [];
   const j = (await r.json()) as { messages?: ThreadMessage[] };
   return j.messages ?? [];
@@ -64,10 +93,10 @@ export async function renameThread(
   threadId: string,
   title: string,
 ): Promise<boolean> {
-  const url = `/api/threads/${encodeURIComponent(threadId)}?profile=${encodeURIComponent(profileId)}`;
+  const url = `/api/threads/${encodeURIComponent(threadId)}?${gwQuery(profileId)}`;
   const r = await fetch(url, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: gwHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ title }),
   });
   if (!r.ok) return false;
@@ -76,8 +105,8 @@ export async function renameThread(
 }
 
 export async function deleteThread(profileId: string, threadId: string): Promise<boolean> {
-  const url = `/api/threads/${encodeURIComponent(threadId)}?profile=${encodeURIComponent(profileId)}`;
-  const r = await fetch(url, { method: "DELETE" });
+  const url = `/api/threads/${encodeURIComponent(threadId)}?${gwQuery(profileId)}`;
+  const r = await fetch(url, { method: "DELETE", headers: gwHeaders() });
   if (!r.ok) return false;
   const j = (await r.json()) as { ok?: boolean };
   return Boolean(j.ok);
