@@ -85,6 +85,7 @@ import { ScheduleHealthReport } from "./components/schedule-health-report";
 import { PendingCriticalReport } from "./components/pending-critical-report";
 import { ResponsibilityLoadReport } from "./components/responsibility-load-report";
 import { TaskList } from "./components/task-list";
+import { ActionPlansTable } from "./components/action-plans-table";
 import { ProjectOverview } from "./components/project-overview";
 
 // Collapsible — bloco único colapsável (não confundir com Accordion, que é
@@ -274,7 +275,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
   },
   {
     name: "Kanban / Lista de tasks / Visão agregada (data-driven via Query)",
-    components: ["WorkflowKanban", "WorkflowGantt", "ScheduleHealthReport", "PendingCriticalReport", "ResponsibilityLoadReport", "TaskList", "ProjectOverview"],
+    components: ["WorkflowKanban", "WorkflowGantt", "ScheduleHealthReport", "PendingCriticalReport", "ResponsibilityLoadReport", "TaskList", "ProjectOverview", "ActionPlansTable"],
     notes: [
       '- 🔑 KANBAN de workflow: SEMPRE `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca; o componente monta colunas/cards/drag/edição/"+ Nova".',
       '- 🔑 CRONOGRAMA / linha do tempo / Gantt de um AP: SEMPRE `g = Query("get_workflow_gantt", {workflow_id: <id>}, {rows: []})` + `gantt = WorkflowGantt(g)`. O RUNTIME lista as tasks e hidrata as datas (start_date→due_date); tarefa sem prazo vira marco. NÃO monte barras à mão nem chame tools de data.',
@@ -284,6 +285,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e ofereça o PDF com `GenerateReportPdf(<workflow_id>, "Relatório executivo — AP 6.4")`. O botão monta o HTML completo a partir dos dados ao vivo, cria o documento na Waves e baixa o PDF — NÃO há "publicar" separado e você NÃO monta HTML nem manda dados. Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
       '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
+      '- 🔑 LISTAR Action Plans ("listar APs", "ver todos os APs", "Action Plans do projeto"): SEMPRE `ap = Query("get_action_plans", {}, {totals: {}, rows: []})` + `tabela = ActionPlansTable(ap)`. O RUNTIME lista os workflows + statistics/overview por AP (uma linha por AP: código, nome, domínio, responsável, avanço, volume) e a linha é CLICÁVEL → abre o kanban do AP (drill-down, sem LLM). **NÃO** monte `Table` genérica pra isso nem itere os workflows você mesmo — nada de dado/id na sessão.',
       "- NÃO chame as tools de dados você mesmo (get_workflow_kanban/list_tasks/get_workflow_tasks/statistics) — isso gasta milhares de tokens e infla a sessão. Use Query + o componente; o runtime resolve.",
       "- workflow_id: use o do contexto (AP/kanban mencionado). Se não souber, pergunte 1 linha.",
       '- `KanbanColumn(name, color?, count?, cards=[...], stageId?)` — uma coluna com header. color: hex (#dc3545) → borda colorida do header. count: número de cards (mostrado como badge). **stageId = funnel_stage_id da etapa** — inclua SEMPRE (vem depois de cards) pra habilitar arrastar cards entre colunas (drag-and-drop move a task pra etapa onde foi solta). Mapeie de stage.id do kanban.',
@@ -525,6 +527,7 @@ export const shadcnChatLibrary = createLibrary({
     ResponsibilityLoadReport,
     TaskList,
     ProjectOverview,
+    ActionPlansTable,
     // Collapsible (bloco único colapsável)
     Collapsible,
     // List/ListItem (lista vertical com marcadores)

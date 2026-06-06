@@ -13,6 +13,7 @@ import { FileDownload } from "./components/file-download";
 import { GenerateReportPdf } from "./components/generate-report-pdf";
 import { WavesDocPdf } from "./components/waves-doc-pdf";
 import { TaskList } from "./components/task-list";
+import { ActionPlansTable } from "./components/action-plans-table";
 import { ProjectOverview } from "./components/project-overview";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { PaginationBlock } from "./components/pagination-block";
@@ -64,6 +65,7 @@ export const ContentChildUnion = z.union([
   Table.ref,
   TaskList.ref,
   ProjectOverview.ref,
+  ActionPlansTable.ref,
   TagBlock.ref,
   Form.ref,
   Buttons.ref,

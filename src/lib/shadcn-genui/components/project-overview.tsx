@@ -61,6 +61,23 @@ export const ProjectOverview = defineComponent({
     const title = (props.title as string | undefined) ?? "Visão geral do projeto";
     const withOverdue = rows.filter((r) => r.overdue > 0).slice(0, 12);
 
+    // 0 tasks no total = NADA carregou (limite 429 da Waves, statistics falharam,
+    // ou sem acesso) — "🎉" só faz sentido quando HÁ tasks e nenhuma vencida.
+    // Nunca mostrar o falso "tudo certo" quando não há dado.
+    if (total === 0) {
+      return (
+        <div className="rounded-md border overflow-hidden">
+          <div className="px-3 py-2 text-sm font-semibold border-b bg-muted/40">{title}</div>
+          <div className="px-3 py-4 text-sm text-muted-foreground">
+            ⚠️ Não consegui carregar os Action Plans agora — provavelmente{" "}
+            <strong>limite de requisições da Waves (429)</strong> ou sem acesso aos APs.{" "}
+            <strong>Isso não significa que não há atrasos.</strong> Tente novamente em alguns
+            segundos.
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-md border overflow-hidden">
         <div className="px-3 py-2 text-sm font-semibold border-b bg-muted/40">{title}</div>

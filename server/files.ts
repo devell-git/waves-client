@@ -40,6 +40,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getWavesUser, type WavesSession } from "./waves-client.js";
 import { getActiveTenant } from "./tenants.js";
+import { createNotification } from "./notifications.js";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FILES_DIR = resolve(rootDir, "agent-files");
@@ -51,6 +52,9 @@ interface FileMeta {
   /** Tenant dono (quando criado via waves_client). Ausente em arquivos da skill
    *  Hermes, que não conhece o tenant — aí cai no check só-por-owner. */
   tenant?: string;
+  /** Ids de usuários com quem o arquivo foi COMPARTILHADO (Task 724). Acesso =
+   *  owner OU shared_with. Recebem notificação `file_shared` no sino. */
+  shared_with?: number[];
   filename: string;
   mimeType: string;
   createdAt: number;
@@ -107,6 +111,20 @@ export function registerFile(args: {
   };
   writeFileSync(resolve(dir, "meta.json"), JSON.stringify(meta));
   return { id, filename: safe };
+}
+
+/** Compartilha um arquivo com um usuário: append em `shared_with` (dedup).
+ *  Retorna a meta atualizada, ou null se o arquivo/metadados não existem.
+ *  Reutilizável pelo endpoint e por scripts server-side. */
+export function shareFileWith(id: string, toUserId: number): FileMeta | null {
+  const dir = resolveFileDir(id);
+  if (!dir || !existsSync(dir)) return null;
+  const meta = readMeta(dir);
+  if (!meta) return null;
+  const set = new Set([...(meta.shared_with ?? []), toUserId]);
+  meta.shared_with = [...set];
+  writeFileSync(resolve(dir, "meta.json"), JSON.stringify(meta));
+  return meta;
 }
 
 /** Extrai o Bearer do header Authorization. */
@@ -167,14 +185,16 @@ filesRouter.get("/:id", async (req, res) => {
     return res.status(403).json({ error: "Sem permissão para este arquivo." });
   }
 
-  // Controle de acesso: se o arquivo tem dono, exige token válido do dono.
+  // Controle de acesso: se o arquivo tem dono, exige token válido do DONO ou de
+  // alguém com quem foi COMPARTILHADO (shared_with).
   if (meta.owner != null) {
     const token = bearerOf(req);
     if (!token) return res.status(401).json({ error: "Autenticação necessária." });
     try {
       const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
       const user = await getWavesUser({ environment: env, accessToken: token });
-      if (user.id !== meta.owner) {
+      const allowed = user.id === meta.owner || (meta.shared_with ?? []).includes(user.id);
+      if (!allowed) {
         return res.status(403).json({ error: "Sem permissão para este arquivo." });
       }
     } catch {
@@ -197,6 +217,65 @@ filesRouter.get("/:id", async (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "private, no-store");
   createReadStream(filePath).pipe(res);
+});
+
+// POST /api/files/:id/share — compartilha o arquivo com outro usuário.
+// Body: { to_user_id, profile, to_name? }. SÓ o dono compartilha. Dá acesso
+// (shared_with) + cria a notificação `file_shared` no sino do destinatário.
+filesRouter.post("/:id/share", async (req, res) => {
+  const token = bearerOf(req);
+  if (!token) return res.status(401).json({ error: "Bearer ausente." });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const toUserId = Number(b.to_user_id);
+  const profile = String(b.profile ?? "");
+  if (!toUserId || !profile) {
+    return res.status(400).json({ error: "to_user_id e profile obrigatórios." });
+  }
+
+  const dir = resolveFileDir(req.params.id);
+  if (!dir || !existsSync(dir)) return res.status(404).json({ error: "Arquivo não encontrado." });
+  const meta = readMeta(dir);
+  if (!meta) return res.status(404).json({ error: "Metadados ausentes." });
+  if (meta.tenant && meta.tenant !== getActiveTenant().id) {
+    return res.status(403).json({ error: "Sem permissão para este arquivo." });
+  }
+
+  // Quem compartilha precisa ser o DONO.
+  let fromName = "Alguém";
+  try {
+    const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
+    const user = (await getWavesUser({ environment: env, accessToken: token })) as {
+      id: number;
+      name?: string;
+      email?: string;
+    };
+    if (meta.owner != null && user.id !== meta.owner) {
+      return res.status(403).json({ error: "Só o dono pode compartilhar." });
+    }
+    fromName = user.name || user.email || `Usuário ${user.id}`;
+  } catch {
+    return res.status(401).json({ error: "Token inválido." });
+  }
+
+  const updated = shareFileWith(req.params.id, toUserId);
+  if (!updated) return res.status(404).json({ error: "Arquivo não encontrado." });
+
+  createNotification({
+    tenant: getActiveTenant().id,
+    profile,
+    userId: toUserId,
+    type: "file_shared",
+    title: `${fromName} compartilhou um arquivo`,
+    body: meta.filename,
+    data: {
+      file_id: req.params.id,
+      file_name: meta.filename,
+      mime: meta.mimeType,
+      from: fromName,
+    },
+  });
+
+  res.json({ ok: true, shared_with: updated.shared_with });
 });
 
 // Garante o diretório base na subida.

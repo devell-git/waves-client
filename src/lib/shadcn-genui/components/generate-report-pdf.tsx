@@ -62,6 +62,7 @@ export const GenerateReportPdf = defineComponent({
   component: ({ props }) => {
     const [phase, setPhase] = useState<Phase>("idle");
     const [err, setErr] = useState<string | null>(null);
+    const [docId, setDocId] = useState<string | null>(null);
     const wid = Number(props.workflow_id);
     const filename = props.filename || `relatorio-ap-${wid}.pdf`;
 
@@ -104,52 +105,62 @@ export const GenerateReportPdf = defineComponent({
           );
         }
         const cd = (created.data?.data ?? created.data) as Record<string, unknown>;
-        const docId = cd?.id ?? (cd?.document as Record<string, unknown>)?.id;
-        if (docId == null) throw new Error("Documento criado sem id");
+        const newDocId = cd?.id ?? (cd?.document as Record<string, unknown>)?.id;
+        if (newDocId == null) throw new Error("Documento criado sem id");
+        setDocId(String(newDocId));
 
-        // 4) baixa o PDF gerado pela Waves
-        setPhase("pdf");
-        const s2 = loadSession();
-        const ph: Record<string, string> = {};
-        if (s2?.accessToken) ph.Authorization = `Bearer ${s2.accessToken}`;
-        const pdf = await fetch(`/api/waves/documents/${encodeURIComponent(String(docId))}/pdf`, { headers: ph });
-        if (!pdf.ok) throw new Error(`Erro ao baixar PDF (${pdf.status})`);
-        const blob = await pdf.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        // 4) Pronto: ABRE O PREVIEWER (ver + Baixar + Compartilhar) — sem download
+        // forçado. O previewer busca o PDF da Waves sob demanda.
         setPhase("done");
+        window.dispatchEvent(
+          new CustomEvent("waves:open-file", {
+            detail: {
+              id: String(newDocId),
+              name: filename,
+              mime: "application/pdf",
+              kind: "document",
+            },
+          }),
+        );
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Falha ao gerar PDF");
         setPhase("idle");
       }
     };
 
-    const busy = phase === "data" || phase === "doc" || phase === "pdf";
+    const busy = phase === "data" || phase === "doc";
     const label =
       phase === "data"
         ? "Buscando dados…"
         : phase === "doc"
-          ? "Gerando documento…"
-          : phase === "pdf"
-            ? "Baixando PDF…"
-            : phase === "done"
-              ? "PDF gerado — baixar de novo"
-              : props.label || "Gerar PDF";
+          ? "Gerando relatório…"
+          : phase === "done"
+            ? "Abrir relatório"
+            : props.label || "Gerar relatório";
+
+    const openPreview = () => {
+      if (!docId) return;
+      window.dispatchEvent(
+        new CustomEvent("waves:open-file", {
+          detail: { id: docId, name: filename, mime: "application/pdf", kind: "document" },
+        }),
+      );
+    };
 
     return (
       <span className="waves-file-download-wrap">
         <button
           type="button"
           className="waves-file-download"
-          onClick={run}
+          onClick={() => (phase === "done" && docId ? openPreview() : run())}
           disabled={busy}
-          title={busy ? label : `Gerar ${filename}`}
+          title={
+            busy
+              ? label
+              : phase === "done"
+                ? "Abrir (ver / baixar / compartilhar)"
+                : `Gerar ${filename}`
+          }
         >
           {busy ? (
             <Loader2 size={18} className="waves-file-download__spin" />

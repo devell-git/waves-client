@@ -92,7 +92,7 @@ function num(v: unknown): number {
 }
 
 /** GET cru no proxy /api/waves, com retry/backoff em 429 (rate-limit da Waves). */
-async function rawGet(path: string, tries = 3): Promise<unknown> {
+async function rawGet(path: string, tries = 5): Promise<unknown> {
   for (let attempt = 0; attempt < tries; attempt++) {
     const r = await fetch(`/api/waves${path}`, { headers: { ...authHeaders() } });
     if (r.status === 429 && attempt < tries - 1) {
@@ -183,6 +183,69 @@ async function aggregateProjectOverview(
     workflows: rows.length,
   };
   const result = { totals, rows: rows.sort((a, b) => b.overdue - a.overdue) };
+  // NÃO cachear resultado vazio/falho (429 engolido vira 0/0/0) — senão o falso
+  // "tudo certo" persiste por todo o TTL mesmo depois do rate-limit passar.
+  // Só cacheia quando carregou de verdade (há workflows e alguma task).
+  if (rows.length > 0 && totals.total > 0) {
+    overviewCache.set(ck, { at: Date.now(), data: result });
+  }
+  return result;
+}
+
+// "6.4 — Ação Precursora - Universidade/..." → {code:"6.4", domain:"Ação Precursora"}.
+function parseApName(name: string): { code: string; domain: string } {
+  const m = /^\s*([\d]+(?:\.[\d]+)*)\s*[—–-]\s*(.+)$/.exec(name);
+  if (!m) return { code: "", domain: "" };
+  const domain = m[2].split(/\s+[-–—]\s+/)[0]?.trim() ?? "";
+  return { code: m[1], domain };
+}
+
+/**
+ * Lista RICA de Action Plans pra `ActionPlansTable` (fluxo EXECUTE, sem LLM):
+ * lista os workflows (1 call) + statistics/overview por AP (máx 3 em paralelo,
+ * 429-safe) → linhas {workflow_id, code, name, domain, responsible, progress,
+ * total, overdue}. Responsável vem do `creator` da listagem (sem fetch extra).
+ * Cacheado. O agente só emite `Query("get_action_plans", {}) + ActionPlansTable`.
+ */
+async function aggregateActionPlans(args: Record<string, unknown>): Promise<unknown> {
+  const ck = `aplans:${JSON.stringify(args ?? {})}`;
+  const hit = overviewCache.get(ck);
+  if (hit && Date.now() - hit.at < RESULT_TTL_MS) return hit.data;
+
+  const wfResp = (await rawGet("/openui/tools/workflows?per_page=100")) as Record<string, unknown>;
+  const d = (wfResp?.data ?? wfResp) as Record<string, unknown>;
+  const rawList = (d?.rows ?? d?.workflows ?? d?.data ?? (Array.isArray(d) ? d : [])) as Array<
+    Record<string, unknown>
+  >;
+  const workflows = (Array.isArray(rawList) ? rawList : [])
+    .map((w) => ({ id: num(w.id), name: String(w.name ?? w.title ?? `Workflow ${w.id}`) }))
+    .filter((w) => w.id > 0);
+
+  // Por AP (máx 3 em paralelo, 429-safe): statistics/overview → volume/avanço.
+  // Responsável NÃO entra no v1: a fonte é cara/incerta (creator/users dão o bot
+  // "Waves") e permission-gated (detalhe 403 fora do escopo). Fica "—" por ora.
+  const rows = (
+    await mapLimit(workflows, 3, async (w) => {
+      const ov = (await rawGet(`/workflows/${w.id}/statistics/overview`)) as Record<string, unknown>;
+      const o = (ov?.data ?? ov) as Record<string, unknown>;
+      const byStatus = (o?.by_status ?? {}) as Record<string, unknown>;
+      const total = num(byStatus.total ?? o.total ?? o.tasks_count);
+      const overdue = num(o.overdue_tasks);
+      const done = num(byStatus.done ?? byStatus.completed ?? byStatus.approved ?? o.completed_tasks);
+      const progress = o.progress != null ? Math.round(num(o.progress)) : total ? Math.round((done / total) * 100) : 0;
+      const { code, domain } = parseApName(w.name);
+      return { workflow_id: w.id, code: code || String(w.id), name: w.name, domain, responsible: "", progress, total, overdue };
+    })
+  ).filter(Boolean);
+
+  rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+  const totals = {
+    aps: rows.length,
+    tasks: rows.reduce((s, r) => s + r.total, 0),
+    overdue: rows.reduce((s, r) => s + r.overdue, 0),
+    done: rows.filter((r) => r.total > 0 && r.progress >= 100).length,
+  };
+  const result = { totals, rows };
   overviewCache.set(ck, { at: Date.now(), data: result });
   return result;
 }
@@ -405,6 +468,7 @@ async function build(): Promise<ToolProvider> {
   }
   // Tools sintéticas de agregação (não estão na spec — feitas no runtime).
   map["get_project_overview"] = (args) => aggregateProjectOverview(args ?? {});
+  map["get_action_plans"] = (args) => aggregateActionPlans(args ?? {});
   map["get_tasks_by_responsible"] = (args) => aggregateTasksByResponsible(args ?? {});
   map["get_workflow_gantt"] = (args) => aggregateWorkflowGantt(args ?? {});
   map["get_schedule_health"] = (args) => aggregateScheduleHealth(args ?? {});

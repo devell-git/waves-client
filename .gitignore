@@ -16,3 +16,4 @@ agent-files
 *.bak.*
 *.deprecated
 prompts/Untitled
+data/
