@@ -899,18 +899,24 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
     });
   }
 
-  let apiKey: string;
-  try {
-    apiKey = getOpenAiCredential();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(
-      JSON.stringify({ error: msg, provider: getOpenAiProvider() }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+  const provider = getOpenAiProvider();
+  // Hermes (apps desacopladas) autentica com o Bearer do PRÓPRIO usuário (não a
+  // service key do gateway) — o branch hermes passa `apiKey: userToken`. Então NÃO
+  // resolvemos getOpenAiCredential() aqui (evita exigir HERMES_API_KEY/.key à toa).
+  // Só codex/openai usam a credencial resolvida.
+  let apiKey = "";
+  if (provider !== "hermes") {
+    try {
+      apiKey = getOpenAiCredential();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return new Response(
+        JSON.stringify({ error: msg, provider }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
   }
 
-  const provider = getOpenAiProvider();
   const baseURL = getOpenAiBaseUrl();
   const model = process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
 
