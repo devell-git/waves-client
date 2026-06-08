@@ -45,6 +45,7 @@ import { Input } from "./components/input";
 import { Label } from "./components/label";
 import { RadioGroup, RadioItem } from "./components/radio-group";
 import { Select, SelectItem } from "./components/select";
+import { BnccSelect } from "./components/bncc-select";
 import { Slider } from "./components/slider";
 import { SwitchGroup, SwitchItem } from "./components/switch-group";
 import { TextArea } from "./components/textarea";
@@ -186,6 +187,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "TextArea",
       "Select",
       "SelectItem",
+      "BnccSelect",
       "DatePicker",
       "Slider",
       "CheckBoxGroup",
@@ -201,6 +203,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "- Form requires explicit buttons. Always pass a Buttons(...) reference as the third Form argument.",
       "- rules is an optional object: { required: true, email: true, min: 8, maxLength: 100 }",
       "- The renderer shows error messages automatically — do NOT generate error text in the UI",
+      "- 🔑 BnccSelect(level) — cascata de selects DEPENDENTES da BNCC. level='infantil' preenche faixa-idade→campo-experiencia→objetivo-aprendizagem; level='fundamental' preenche componente-curricular→ano-faixa→habilidade. Use DENTRO de um Form (envolto num FormControl) NO LUGAR de Selects manuais quando os campos forem da BNCC. O componente carrega a hierarquia e escreve os 3 valores no formState sozinho — NÃO monte os SelectItem da BNCC à mão nem liste habilidades em texto.",
     ],
   },
   {
@@ -495,6 +498,7 @@ export const shadcnChatLibrary = createLibrary({
     TextArea,
     Select,
     SelectItem,
+    BnccSelect,
     DatePicker,
     Slider,
     CheckBoxGroup,
