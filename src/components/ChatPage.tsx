@@ -60,6 +60,7 @@ import {
   ensureToolProvider,
   getToolProvider,
   resolveWorkflowIdByLabel,
+  setActiveAgentId,
 } from "../lib/openui-tools";
 import {
   setAdminFlag,
@@ -944,6 +945,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
       ? { token: session.accessToken, host: activeAgent?.host, port: activeAgent?.port }
       : null,
   );
+  // Agente ativo → X-Agent-Id nas chamadas do runtime OpenUI (proxy anexa ?agent_id=
+  // nas rotas de workflow/task). Idempotente, mesmo padrão do setThreadGateway acima.
+  setActiveAgentId(activeAgent?.id);
 
   // Aba interna (só temos a página de chat) → "Chat | <nome do agente>".
   // Nome do agente vem do cadastro (page_title/title/name). Sem agente → "Chat".
@@ -1008,6 +1012,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
           // por isso (sem lista hardcoded) e autentica com o token do usuário.
           host: activeAgent?.host,
           port: activeAgent?.port,
+          // agent_id (do login) → o server manda X-Hermes-Agent-Id pro gateway, que
+          // grava na web-session; as MCP tools de workflow/task anexam ?agent_id=.
+          agentId: activeAgent?.id,
           // Continuidade de conversa: o runtime às vezes passa threadId vazio/
           // "default" em conversas novas → o backend cairia num session efêmero
           // (sem histórico). Usa o activeThreadId persistido (por profile) como

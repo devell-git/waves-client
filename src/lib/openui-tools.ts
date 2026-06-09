@@ -33,9 +33,21 @@ export type ToolProvider = Record<
 const RESULT_TTL_MS = 60_000;
 const resultCache = new Map<string, { at: number; data: unknown }>();
 
+// Agente ativo (do login, casado por porta no ChatPage). Vai no header X-Agent-Id de
+// TODA chamada ao proxy /api/waves; o proxy anexa ?agent_id= nas rotas de workflow/task
+// (a Waves filtra quais workflows cada agente vê). Singleton de módulo (padrão setThreadGateway).
+let _activeAgentId: string | null = null;
+export function setActiveAgentId(id: number | string | null | undefined): void {
+  _activeAgentId = id == null || id === "" ? null : String(id);
+}
+
 function authHeaders(): Record<string, string> {
   const s = loadSession();
-  return s?.accessToken ? { Authorization: `Bearer ${s.accessToken}` } : {};
+  const h: Record<string, string> = s?.accessToken
+    ? { Authorization: `Bearer ${s.accessToken}` }
+    : {};
+  if (_activeAgentId) h["X-Agent-Id"] = _activeAgentId;
+  return h;
 }
 
 async function callTool(

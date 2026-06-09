@@ -122,7 +122,22 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
       error: `Host "${host}" não está mapeado a nenhum tenant. Configure em .secrets/tenants.json.`,
     });
   }
-  const upstreamPath = req.url.replace(/^\/api\/waves/, "") || "/";
+  let upstreamPath = req.url.replace(/^\/api\/waves/, "") || "/";
+  // Escopo por AGENTE: a Waves filtra workflows/tasks pelo agent_id. O client manda
+  // X-Agent-Id (agente ativo do login); anexamos ?agent_id= nessas rotas GET. Entra no
+  // upstreamPath ANTES da cache key → não há colisão de cache entre agentes diferentes.
+  const agentId = (req.headers["x-agent-id"] as string | undefined)?.trim();
+  if (agentId && req.method === "GET") {
+    const pathOnly = upstreamPath.split("?")[0];
+    const scoped =
+      pathOnly === "/workflows" || pathOnly.startsWith("/workflows/") ||
+      pathOnly === "/openui/tools/workflows" || pathOnly.startsWith("/openui/tools/workflows/") ||
+      pathOnly === "/openui/tools/tasks" || pathOnly.startsWith("/openui/tools/tasks/");
+    if (scoped && !/[?&]agent_id=/.test(upstreamPath)) {
+      upstreamPath +=
+        (upstreamPath.includes("?") ? "&" : "?") + "agent_id=" + encodeURIComponent(agentId);
+    }
+  }
   const url = `${tenant.url}${upstreamPath}`;
 
   // Cache READ por usuário (combate 429): statistics/* e lista de workflows.

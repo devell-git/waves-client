@@ -967,6 +967,7 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
       cacheTrigger,
       wantUsage: body.wantUsage === true,
       profileId: body.profile,
+      agentId: body.agentId,
     });
   }
 
@@ -1406,6 +1407,8 @@ interface HandleHermesOptions {
    * token do usuário na pasta do PRÓPRIO profile (não vaza token entre profiles).
    */
   profileId?: string;
+  /** agent_id (do login) → header X-Hermes-Agent-Id pro gateway gravar na web-session. */
+  agentId?: number | string;
 }
 
 /**
@@ -1439,7 +1442,7 @@ function truncateOldAssistantUI(
 async function handleChatRequestHermes(
   opts: HandleHermesOptions,
 ): Promise<Response> {
-  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, reasoningEffort, profileId, wantUsage } = opts;
+  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession, userScope, cacheTrigger, threadId, reasoningEffort, profileId, agentId, wantUsage } = opts;
 
   const t0 = Date.now();
   const elapsed = () => `${Date.now() - t0}ms`;
@@ -1627,6 +1630,7 @@ async function handleChatRequestHermes(
                 Accept: "text/event-stream",
                 "X-Hermes-Session-Id": sessionId,
                 ...(reasoningEffort ? { "X-Hermes-Reasoning-Effort": reasoningEffort } : {}),
+                ...(agentId != null && agentId !== "" ? { "X-Hermes-Agent-Id": String(agentId) } : {}),
               },
               body: JSON.stringify({
                 model: process.env.HERMES_MODEL || "hermes-agent",
