@@ -59,8 +59,20 @@ const HERMES_ALLOWED_HOSTS = new Set(
     .filter(Boolean),
 );
 
+// Loopback é sempre permitido (deploy co-locado, default). Demais hosts só via
+// allowlist explícita.
+const HERMES_LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+// Hostname seguro: letras/dígitos/`.`/`-` (DNS) ou IPv4. NÃO casa `@`, `/`, `:`,
+// espaço — caracteres que permitiriam subverter a URL (userinfo, path, porta
+// embutida) e desviar a request pra outro destino.
+const SAFE_HOSTNAME = /^[a-zA-Z0-9.-]+$/;
+
 /** Resolve o gateway Hermes a partir do host+port do LOGIN (sem lista hardcoded).
- *  Anti-SSRF: porta válida + host só fora do loopback se estiver na allowlist. */
+ *  Anti-SSRF (defesa-em-profundidade): porta válida + host só fora do loopback se
+ *  estiver na allowlist + forma de hostname segura + a baseURL final é re-parseada
+ *  com `new URL()` e re-conferida (protocolo http, hostname permitido, porta bate).
+ *  Assim, mesmo que a montagem mude no futuro, o destino nunca escapa do esperado. */
 export function resolveHermesGateway(
   host?: string,
   port?: number,
@@ -71,9 +83,29 @@ export function resolveHermesGateway(
   if (!Number.isInteger(p) || p < 1 || p > 65535) {
     return { ok: false, status: 400, error: `Porta de gateway inválida: ${String(port)}` };
   }
-  const h = (host || "").trim();
-  const useHost = h && HERMES_ALLOWED_HOSTS.has(h) ? h : "127.0.0.1";
-  return { ok: true, baseURL: `http://${useHost}:${p}/v1` };
+  const h = (host || "").trim().toLowerCase();
+  // Host do login só é honrado se: forma segura E na allowlist. Qualquer outra
+  // coisa (vazio, malformado, não-listado) → loopback. Nunca um host arbitrário.
+  const allowed = h && SAFE_HOSTNAME.test(h) && HERMES_ALLOWED_HOSTS.has(h);
+  const useHost = allowed ? h : "127.0.0.1";
+  const baseURL = `http://${useHost}:${p}/v1`;
+
+  // Re-valida o resultado final. `useHost` já é restrito, mas re-parsear garante
+  // que nenhum caractere inesperado sobreviveu à montagem (defesa-em-profundidade).
+  let parsed: URL;
+  try {
+    parsed = new URL(baseURL);
+  } catch {
+    return { ok: false, status: 400, error: "baseURL de gateway inválida" };
+  }
+  const hostOk =
+    HERMES_LOOPBACK_HOSTS.has(parsed.hostname) || HERMES_ALLOWED_HOSTS.has(parsed.hostname);
+  // `new URL()` omite a porta default do protocolo (http→80): trata "" como 80.
+  const effectivePort = parsed.port || "80";
+  if (parsed.protocol !== "http:" || !hostOk || effectivePort !== String(p)) {
+    return { ok: false, status: 400, error: `Destino de gateway não permitido: ${useHost}:${p}` };
+  }
+  return { ok: true, baseURL };
 }
 import { clearProgress, setProgress } from "./tool-progress.js";
 import { consultToolToProfile, getLatestJob } from "./specialist-jobs.js";
