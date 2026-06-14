@@ -5,8 +5,10 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  Mic,
   Plus,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -70,6 +72,92 @@ export function ChatComposer({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // ── Áudio → texto (microfone, estilo WhatsApp: SEGURE pra falar, ARRASTE ◀ pra cancelar) ──
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [willCancel, setWillCancel] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const discardRef = useRef(false); // true → descarta (não transcreve/envia)
+  const pendingStopRef = useRef(false); // soltou ANTES do recorder ficar pronto (corrida)
+  const startXRef = useRef(0);
+  const pressStartRef = useRef(0); // pra distinguir TAP (toggle) de HOLD (push-to-talk)
+  const CANCEL_DX = 80; // px arrastando p/ esquerda → cancela
+  const HOLD_MS = 400; // > isso = considera HOLD (push-to-talk); senão TAP (toggle)
+
+  const startRecording = async () => {
+    if (recording || transcribing) return; // guarda: sem double-start
+    setError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Gravação de áudio não suportada neste navegador.");
+      return;
+    }
+    discardRef.current = false;
+    pendingStopRef.current = false;
+    setWillCancel(false);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Não foi possível acessar o microfone (permissão negada?).");
+      return;
+    }
+    chunksRef.current = [];
+    const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    mr.ondataavailable = (e) => {
+      if (e.data.size) chunksRef.current.push(e.data);
+    };
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recorderRef.current = null;
+      setRecording(false);
+      setWillCancel(false);
+      if (discardRef.current) {
+        chunksRef.current = [];
+        return; // DESCARTADO (arrastou pra cancelar) — não envia
+      }
+      const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+      if (blob.size < 1200) return; // muito curto → toque acidental, ignora
+      setTranscribing(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", blob, "audio.webm");
+        fd.append("language", "pt");
+        const r = await fetch("/api/transcribe", { method: "POST", body: fd });
+        const j = (await r.json().catch(() => ({}))) as { text?: string; error?: string };
+        const t = (j.text ?? "").trim();
+        if (t) void handleSubmit(t, { voice: true });
+        else setError(j.error ?? "Não entendi o áudio — tente falar mais perto do microfone.");
+      } catch {
+        setError("Falha ao transcrever o áudio.");
+      } finally {
+        setTranscribing(false);
+      }
+    };
+    recorderRef.current = mr;
+    // Corrida: se soltou/cancelou antes de ficar pronto, encerra já.
+    if (pendingStopRef.current) {
+      try {
+        mr.stop();
+      } catch {
+        stream.getTracks().forEach((t) => t.stop());
+        recorderRef.current = null;
+      }
+      return;
+    }
+    mr.start();
+    setRecording(true);
+  };
+
+  // Encerra a gravação. cancel=true → descarta (não envia).
+  const finishRecording = (cancel: boolean) => {
+    discardRef.current = cancel;
+    const mr = recorderRef.current;
+    if (mr && mr.state === "recording") mr.stop();
+    else pendingStopRef.current = true; // ainda iniciando → para assim que ficar pronto
+  };
+
   // Auto-resize do textarea (mesmo comportamento do Composer nativo).
   useLayoutEffect(() => {
     const el = inputRef.current;
@@ -106,9 +194,12 @@ export function ChatComposer({
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(overrideText?: string, opts?: { voice?: boolean }) {
     if (busy) return;
-    const trimmed = text.trim();
+    // `overrideText` (ex.: vindo da transcrição de áudio) envia direto, sem
+    // depender do que está na caixa. `opts.voice` marca a msg como áudio (🎤) —
+    // out-of-band, sem sujar o conteúdo que vai pro LLM/atalhos.
+    const trimmed = (overrideText ?? text).trim();
     if (!trimmed && files.length === 0) return;
 
     // Atalho DETERMINÍSTICO: "criar/nova tarefa" com um kanban na tela abre o
@@ -166,9 +257,9 @@ export function ChatComposer({
           filename: u.filename,
         });
       }
-      processMessage({ role: "user", content: parts });
+      processMessage({ role: "user", content: parts, ...(opts?.voice ? { voice: true } : {}) } as Parameters<typeof processMessage>[0]);
     } else {
-      processMessage({ role: "user", content: trimmed });
+      processMessage({ role: "user", content: trimmed, ...(opts?.voice ? { voice: true } : {}) } as Parameters<typeof processMessage>[0]);
     }
 
     setText("");
@@ -216,6 +307,31 @@ export function ChatComposer({
         </div>
       )}
 
+      {recording && (
+        <div className={`waves-composer__rec-hint${willCancel ? " waves-composer__rec-hint--cancel" : ""}`}>
+          {willCancel ? (
+            <>
+              <Trash2 size={14} /> Solte para <strong>cancelar</strong>
+            </>
+          ) : (
+            <>
+              <span className="waves-composer__rec-dot" /> Gravando… clique no 🎤 para enviar
+              <button
+                type="button"
+                className="waves-composer__rec-cancel"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  finishRecording(true);
+                }}
+              >
+                <Trash2 size={13} /> cancelar
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="openui-shell-thread-composer__input-wrapper">
         <textarea
           ref={inputRef}
@@ -248,6 +364,51 @@ export function ChatComposer({
             onClick={() => fileInputRef.current?.click()}
           >
             <Plus size={18} />
+          </button>
+          <button
+            type="button"
+            className={`waves-composer__mic-button${recording ? (willCancel ? " waves-composer__mic-button--cancel" : " waves-composer__mic-button--recording") : ""}`}
+            aria-label={recording ? "Clique para enviar" : "Clique para gravar (ou segure para falar)"}
+            title="Clique para gravar/enviar · ou segure pra falar · arraste ◀ pra cancelar"
+            aria-pressed={recording}
+            disabled={transcribing}
+            onPointerDown={(e) => {
+              if (transcribing) return;
+              e.preventDefault();
+              // Já gravando (modo toggle) → este clique ENVIA.
+              if (recording) {
+                finishRecording(willCancel);
+                return;
+              }
+              startXRef.current = e.clientX;
+              pressStartRef.current = Date.now();
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                /* ignore */
+              }
+              void startRecording();
+            }}
+            onPointerMove={(e) => {
+              if (recording) setWillCancel(startXRef.current - e.clientX > CANCEL_DX);
+            }}
+            onPointerUp={(e) => {
+              e.preventDefault();
+              const held = Date.now() - pressStartRef.current;
+              // HOLD (segurou) → soltar envia/cancela. TAP (clique) → segue gravando
+              // (modo toggle); o próximo clique encerra.
+              if (held >= HOLD_MS) finishRecording(willCancel);
+            }}
+            onPointerCancel={() => finishRecording(true)}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {transcribing ? (
+              <Loader2 size={18} className="waves-composer__spin" />
+            ) : recording ? (
+              willCancel ? <Trash2 size={16} /> : <Square size={15} fill="currentColor" />
+            ) : (
+              <Mic size={18} />
+            )}
           </button>
           {onToggleReasoning && (
             <button

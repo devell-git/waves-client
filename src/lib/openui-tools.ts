@@ -41,6 +41,23 @@ export function setActiveAgentId(id: number | string | null | undefined): void {
   _activeAgentId = id == null || id === "" ? null : String(id);
 }
 
+/** IDs dos tipos de documento (DocumentType) que o AGENTE ATIVO pode gerar.
+ * Vem do login (`agent.document_type_ids`; fallback na relação `document_types`).
+ * É a FONTE pra escolher o `document_type_id` ao criar documento — nada de
+ * hardcode nem "pega o 1º global". `undefined` = agente sem escopo definido. */
+export function getActiveAgentDocTypeIds(): number[] | undefined {
+  const s = loadSession();
+  const a = (s?.agents ?? []).find((x) => String(x.id) === _activeAgentId);
+  if (!a) return undefined;
+  const ids = Array.isArray(a.document_type_ids)
+    ? a.document_type_ids
+    : Array.isArray(a.document_types)
+      ? a.document_types.map((d) => d?.id)
+      : [];
+  const clean = ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  return clean.length ? Array.from(new Set(clean)) : undefined;
+}
+
 function authHeaders(): Record<string, string> {
   const s = loadSession();
   const h: Record<string, string> = s?.accessToken
@@ -400,6 +417,128 @@ async function aggregateWorkflowGantt(args: Record<string, unknown>): Promise<un
   return { workflow_id: wid, rows: await loadWorkflowTasks(wid) };
 }
 
+// ── Gantt de PORTFÓLIO (hierárquico: workflow → tarefa → subtarefa) ──────────
+// Híbrido (#2): a tool devolve só a LISTA de workflows (1 chamada, rápida). O
+// componente ProjectGantt chama `loadWorkflowTasksFull` por workflow EM
+// BACKGROUND (concorrência) e preenche as barras conforme chegam — render
+// instantâneo em vez de esperar o N+1. Cache 5min (#4) inclui os VAZIOS, então
+// reaberturas pulam os 25 workflows sem tarefa.
+export interface ProjectTask {
+  id: number;
+  title: string;
+  parent_id: number | null;
+  start_date: string | null;
+  due_date: string | null;
+  done_date: string | null;
+  progress: number;
+  status: string;
+  responsible: string;
+}
+const PROJECT_TTL_MS = 600_000; // 10 min
+const wfFullCache = new Map<number, { at: number; rows: ProjectTask[] }>();
+
+// Persistência em sessionStorage → sobrevive ao RELOAD da página (o Map em
+// memória não). Respeita o mesmo TTL. Por workflow (evita reescrever tudo).
+const SS_PREFIX = "wfTasks:";
+type CacheEntry = { at: number; rows: ProjectTask[] };
+function ssGet(wid: number): CacheEntry | null {
+  try {
+    const raw = sessionStorage.getItem(SS_PREFIX + wid);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as CacheEntry;
+    return o && typeof o.at === "number" && Array.isArray(o.rows) ? o : null;
+  } catch {
+    return null;
+  }
+}
+function cacheSet(wid: number, entry: CacheEntry): void {
+  wfFullCache.set(wid, entry);
+  try {
+    sessionStorage.setItem(SS_PREFIX + wid, JSON.stringify(entry));
+  } catch {
+    /* quota/sem storage → só memória */
+  }
+}
+
+export class RateLimited extends Error {
+  retryAfter: number;
+  constructor(retryAfter: number) {
+    super("429");
+    this.retryAfter = retryAfter;
+  }
+}
+
+// Gate GLOBAL: serializa as chamadas reais à Waves com um gap mínimo entre elas
+// (vale pra qualquer instância/loop) — evita rajada que estoura o rate-limit.
+const WAVES_MIN_GAP_MS = 600;
+let wavesChain: Promise<void> = Promise.resolve();
+let wavesLastAt = 0;
+function wavesGate(): Promise<void> {
+  const mine = wavesChain.then(async () => {
+    const wait = WAVES_MIN_GAP_MS - (Date.now() - wavesLastAt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    wavesLastAt = Date.now();
+  });
+  wavesChain = mine.catch(() => {});
+  return mine;
+}
+
+export async function loadWorkflowTasksFull(wid: number): Promise<ProjectTask[]> {
+  let hit = wfFullCache.get(wid);
+  if (!hit) {
+    // Em memória vazio (ex.: depois de um reload) → tenta o sessionStorage.
+    const ss = ssGet(wid);
+    if (ss) {
+      wfFullCache.set(wid, ss);
+      hit = ss;
+    }
+  }
+  if (hit && Date.now() - hit.at < PROJECT_TTL_MS) return hit.rows; // cache: sem rede, sem gate
+  await wavesGate(); // espaça as chamadas reais
+  // Fetch com status: 429 → THROW (não cacheia; o chamador retenta) — evita
+  // gravar "vazio" falso quando foi só rate-limit. Só cacheia resposta real.
+  const r = await fetch(`/api/waves/workflows/${wid}/tasks`, { headers: { ...authHeaders() } });
+  if (r.status === 429) throw new RateLimited((Number(r.headers.get("retry-after")) || 0) * 1000);
+  if (!r.ok) throw new Error(String(r.status));
+  const resp = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  const d = (resp?.data ?? resp) as Record<string, unknown>;
+  const raw = (d?.tasks ?? d?.rows ?? d?.data ?? (Array.isArray(d) ? d : [])) as Array<Record<string, unknown>>;
+  const rows: ProjectTask[] = (Array.isArray(raw) ? raw : [])
+    .map((t) => {
+      const au = t.assigned_user as Record<string, unknown> | undefined;
+      const resp2 = t.responsible as Record<string, unknown> | string | undefined;
+      const responsible =
+        au && typeof au === "object"
+          ? String(au.name ?? "")
+          : typeof resp2 === "string"
+            ? resp2
+            : resp2 && typeof resp2 === "object"
+              ? String(resp2.name ?? "")
+              : "";
+      return {
+        id: num(t.id),
+        title: String(t.title ?? t.name ?? "(sem título)"),
+        parent_id: t.parent_id != null ? num(t.parent_id) : null,
+        start_date: (t.start_date as string) ?? null,
+        due_date: (t.due_date as string) ?? null,
+        done_date: (t.done_date as string) ?? null,
+        progress: num(t.progress),
+        status: t.status != null ? String(t.status) : "",
+        responsible,
+      };
+    })
+    .filter((t) => t.id > 0);
+  cacheSet(wid, { at: Date.now(), rows }); // memória + sessionStorage (sobrevive reload)
+  return rows;
+}
+
+/** Gantt de portfólio: a tool devolve só a LISTA (id+name) — 1 chamada. O
+ *  componente busca as tasks por workflow em background. */
+async function aggregateProjectGantt(_args: Record<string, unknown>): Promise<unknown> {
+  const workflows = await getWorkflowList();
+  return { workflows: workflows.map((w) => ({ id: w.id, name: w.name })) };
+}
+
 // Saúde do cronograma: mesma base de tasks; o componente computa esperado×real,
 // desvio e classificação. Tool = data-fetcher (compartilha cache do Gantt).
 async function aggregateScheduleHealth(args: Record<string, unknown>): Promise<unknown> {
@@ -425,21 +564,62 @@ async function aggregateResponsibilityLoad(args: Record<string, unknown>): Promi
 }
 
 // ── Resolução AP→workflow_id (pro atalho determinístico de "abrir kanban") ──
-// Lista de workflows (id+name) cacheada no cliente. 1 GET barato, SEM LLM.
-let wfListCache: { at: number; list: Array<{ id: number; name: string }> } | null = null;
+// Lista de workflows (id+name). É o ponto CRÍTICO do Gantt de projeto — se ela
+// falhar (429), nada aparece. Por isso: cache em memória + sessionStorage (10min,
+// sobrevive reload) + gate + retry ATRAVESSANDO o 429 + fallback pro cache velho.
+type WfList = Array<{ id: number; name: string }>;
+const WF_LIST_TTL = 600_000; // 10 min
+const WF_LIST_SS = "wfList:v1";
+let wfListCache: { at: number; list: WfList } | null = null;
 
-async function getWorkflowList(): Promise<Array<{ id: number; name: string }>> {
-  if (wfListCache && Date.now() - wfListCache.at < RESULT_TTL_MS) return wfListCache.list;
-  const wfResp = (await rawGet("/openui/tools/workflows?per_page=100")) as Record<string, unknown>;
-  const d = (wfResp?.data ?? wfResp) as Record<string, unknown>;
-  const rawList = (d?.rows ?? d?.workflows ?? d?.data ?? (Array.isArray(d) ? d : [])) as Array<
-    Record<string, unknown>
-  >;
-  const list = (Array.isArray(rawList) ? rawList : [])
-    .map((w) => ({ id: num(w.id), name: String(w.name ?? w.title ?? `Workflow ${w.id}`) }))
-    .filter((w) => w.id > 0);
-  if (list.length) wfListCache = { at: Date.now(), list };
-  return list;
+function ssGetWfList(): { at: number; list: WfList } | null {
+  try {
+    const raw = sessionStorage.getItem(WF_LIST_SS);
+    if (!raw) return null;
+    const o = JSON.parse(raw) as { at: number; list: WfList };
+    return o && typeof o.at === "number" && Array.isArray(o.list) ? o : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkflowList(): Promise<WfList> {
+  if (!wfListCache) wfListCache = ssGetWfList(); // hidrata do sessionStorage (reload)
+  if (wfListCache && Date.now() - wfListCache.at < WF_LIST_TTL) return wfListCache.list;
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await wavesGate();
+    let r: Response;
+    try {
+      r = await fetch(`/api/waves/openui/tools/workflows?per_page=100`, { headers: { ...authHeaders() } });
+    } catch {
+      break;
+    }
+    if (r.status === 429) {
+      const ra = Number(r.headers.get("retry-after"));
+      await new Promise((res) => setTimeout(res, ra > 0 ? ra * 1000 : Math.min(8000, 800 * 1.6 ** attempt)));
+      continue; // retenta — a lista NÃO pode falhar por 429 transitório
+    }
+    if (!r.ok) break;
+    const wfResp = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    const d = (wfResp?.data ?? wfResp) as Record<string, unknown>;
+    const rawList = (d?.rows ?? d?.workflows ?? d?.data ?? (Array.isArray(d) ? d : [])) as Array<Record<string, unknown>>;
+    const list = (Array.isArray(rawList) ? rawList : [])
+      .map((w) => ({ id: num(w.id), name: String(w.name ?? w.title ?? `Workflow ${w.id}`) }))
+      .filter((w) => w.id > 0);
+    if (list.length) {
+      wfListCache = { at: Date.now(), list };
+      try {
+        sessionStorage.setItem(WF_LIST_SS, JSON.stringify(wfListCache));
+      } catch {
+        /* sem storage → só memória */
+      }
+      return list;
+    }
+    break; // resposta ok mas vazia → não insiste
+  }
+  // Falhou tudo → devolve o cache (mesmo expirado) se houver; senão vazio.
+  return wfListCache?.list ?? [];
 }
 
 /**
@@ -483,6 +663,7 @@ async function build(): Promise<ToolProvider> {
   map["get_action_plans"] = (args) => aggregateActionPlans(args ?? {});
   map["get_tasks_by_responsible"] = (args) => aggregateTasksByResponsible(args ?? {});
   map["get_workflow_gantt"] = (args) => aggregateWorkflowGantt(args ?? {});
+  map["get_project_gantt"] = (args) => aggregateProjectGantt(args ?? {});
   map["get_schedule_health"] = (args) => aggregateScheduleHealth(args ?? {});
   map["get_pending_critical"] = (args) => aggregatePendingCritical(args ?? {});
   map["get_responsibility_load"] = (args) => aggregateResponsibilityLoad(args ?? {});

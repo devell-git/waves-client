@@ -15,6 +15,7 @@ import { CodeBlock } from "./components/code-block";
 import { Image, ImageBlock } from "./components/image";
 import { FileDownload } from "./components/file-download";
 import { GenerateReportPdf } from "./components/generate-report-pdf";
+import { GenerateExecutiveUpdate } from "./components/generate-executive-update";
 import { WavesDocPdf } from "./components/waves-doc-pdf";
 import { MarkDownRenderer } from "./components/markdown-renderer";
 import { Progress } from "./components/progress";
@@ -82,6 +83,7 @@ import { Stack } from "./components/stack";
 import { Kanban, KanbanCard, KanbanColumn } from "./components/kanban";
 import { WorkflowKanban } from "./components/workflow-kanban";
 import { WorkflowGantt } from "./components/workflow-gantt";
+import { ProjectGantt } from "./components/project-gantt";
 import { ScheduleHealthReport } from "./components/schedule-health-report";
 import { PendingCriticalReport } from "./components/pending-critical-report";
 import { ResponsibilityLoadReport } from "./components/responsibility-load-report";
@@ -110,6 +112,7 @@ const ChatCardChildUnion = z.union([
   Kanban.ref,
   WorkflowKanban.ref,
   WorkflowGantt.ref,
+  ProjectGantt.ref,
   ScheduleHealthReport.ref,
   PendingCriticalReport.ref,
   ResponsibilityLoadReport.ref,
@@ -150,6 +153,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "ImageBlock",
       "FileDownload",
       "GenerateReportPdf",
+      "GenerateExecutiveUpdate",
       "WavesDocPdf",
       "Progress",
       "Separator",
@@ -157,7 +161,8 @@ export const shadcnComponentGroups: ComponentGroup[] = [
     notes: [
       "- Image/ImageBlock mostram imagem inline (src = URL pública ou data:image/...;base64).",
       "- FileDownload(id, filename, mimeType?, size?) — arquivo genérico em agent-files (id = uuid).",
-      "- 🔑 GenerateReportPdf(workflow_id, title?, subtitle?, filename?, label?) — É ASSIM que se faz PDF de RELATÓRIO/cronograma de um AP. O RUNTIME busca os dados ao vivo, monta o HTML executivo completo (saúde do cronograma + pendências críticas + carga por responsável), cria o documento NA Waves e baixa o PDF — TUDO no clique do botão. Você só emite `GenerateReportPdf(<workflow_id>, \"Relatório executivo — AP 6.4\")`. NÃO monte HTML, NÃO chame POST /api/documents, NÃO use a skill manage-documents pra isso, NÃO mande os dados. Vale também em conversa: se pedirem o PDF, ofereça este botão (não precisa ter mostrado card antes).",
+      "- GenerateReportPdf(workflow_id, title?, subtitle?, filename?, label?) — PDF de **SAÚDE / CRONOGRAMA** de um AP (status: saúde do cronograma + pendências críticas + carga por responsável). Botão que no clique cria o doc na Waves e baixa o PDF. Ex.: `GenerateReportPdf(<workflow_id>, \"Relatório de cronograma — AP 6.4\")`. ⚠️ NÃO use pra **'Relatório Executivo' / 'relatório de atualização'** (tarefas/subtarefas/checklists) — pra isso é o `GenerateExecutiveUpdate`. NÃO monte HTML, NÃO chame POST /api/documents, NÃO mande os dados.",
+      "- 🔑 GenerateExecutiveUpdate(workflow_id, ap_number?, mode?, org?, filename?, label?) — É O componente do **RELATÓRIO EXECUTIVO** / **relatório executivo de atualização** de um AP (tarefas principais, subtarefas, checklist principal/por subtarefa, prazos e valores). Gatilhos: \"gere um relatório executivo do AP X\", \"relatório de atualização do AP X\". Ele **JÁ RENDERIZA o relatório na tela** (sem botão de 'gerar'/'montar' — auto-monta ao ser emitido) e oferece os botões PDF e Word. `mode` (3º arg) muda o ESTILO: `completo` (default), `resumido` (sem o detalhamento das ações — só resumo/indicadores/pendências/conclusão), `analitico` (completo + Leitura analítica orientada a decisão). Mapeie o pedido: \"mais resumida\"→resumido, \"mais analítica/decisão\"→analitico. Ex.: completo `GenerateExecutiveUpdate(106, \"6.4\")`; analítico `GenerateExecutiveUpdate(106, \"6.4\", \"analitico\")`; resumido `GenerateExecutiveUpdate(106, \"6.4\", \"resumido\")`. ⚠️ NUNCA passe `null` como argumento (o openui-lang quebra) — omita os args do fim que não usar. NÃO ofereça botão 'Gerar', NÃO monte HTML, NÃO liste as tasks, NÃO mande os dados.",
       "- WavesDocPdf(docId, filename?, label?) — só pra baixar o PDF de um documento Waves que JÁ existe (você tem o id). Pra gerar relatório use GenerateReportPdf.",
     ],
   },
@@ -278,14 +283,15 @@ export const shadcnComponentGroups: ComponentGroup[] = [
   },
   {
     name: "Kanban / Lista de tasks / Visão agregada (data-driven via Query)",
-    components: ["WorkflowKanban", "WorkflowGantt", "ScheduleHealthReport", "PendingCriticalReport", "ResponsibilityLoadReport", "TaskList", "ProjectOverview", "ActionPlansTable"],
+    components: ["WorkflowKanban", "WorkflowGantt", "ProjectGantt", "ScheduleHealthReport", "PendingCriticalReport", "ResponsibilityLoadReport", "TaskList", "ProjectOverview", "ActionPlansTable"],
     notes: [
       '- 🔑 KANBAN de workflow: SEMPRE `kb = Query("get_workflow_kanban", {id: <workflow_id>}, {stages: []})` + `board = WorkflowKanban(kb)`. NADA MAIS. O RUNTIME busca; o componente monta colunas/cards/drag/edição/"+ Nova".',
       '- 🔑 CRONOGRAMA / linha do tempo / Gantt de um AP: SEMPRE `g = Query("get_workflow_gantt", {workflow_id: <id>}, {rows: []})` + `gantt = WorkflowGantt(g)`. O RUNTIME lista as tasks e hidrata as datas (start_date→due_date); tarefa sem prazo vira marco. NÃO monte barras à mão nem chame tools de data.',
+      '- 🔑 CRONOGRAMA GERAL / Gantt do PROJETO / Gantt de TODOS os APs (vários workflows, hierárquico e expansível): SEMPRE `pg = Query("get_project_gantt", {}, {workflows: []})` + `g = ProjectGantt(pg)`. Cada workflow é uma barra; expande pra tarefas e subtarefas. Use quando o pedido é do PROJETO/portfólio (não de um AP só). NÃO itere workflows você mesmo.',
       '- 🔑 SAÚDE DO CRONOGRAMA / avanço esperado vs real / desvio de um AP: SEMPRE `h = Query("get_schedule_health", {workflow_id: <id>}, {rows: []})` + `rep = ScheduleHealthReport(h)`. O RUNTIME compara % esperado (tempo decorrido) vs % real (progress), classifica saúde e monta cards + leitura executiva + tabela. NÃO calcule você mesmo nem monte a tabela à mão.',
       '- 🔑 PENDÊNCIAS CRÍTICAS / bloqueios / "o que está travado" de um AP: SEMPRE `p = Query("get_pending_critical", {workflow_id: <id>}, {rows: []})` + `rep = PendingCriticalReport(p)`. O RUNTIME filtra vencidas/sem responsável/sem prazo/paradas/aguardando dependência e monta cards + leitura executiva + tabela acionável. NÃO filtre você mesmo nem monte a tabela à mão.',
       '- 🔑 CARGA / RESPONSABILIDADE / distribuição por responsável de um AP: SEMPRE `c = Query("get_responsibility_load", {workflow_id: <id>}, {rows: []})` + `rep = ResponsibilityLoadReport(c)`. O RUNTIME agrupa por pessoa (total/seguras/atenção/críticas/vencendo em 7d/% médio/risco/observação). NÃO agrupe você mesmo nem monte a tabela à mão.',
-      '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e ofereça o PDF com `GenerateReportPdf(<workflow_id>, "Relatório executivo — AP 6.4")`. O botão monta o HTML completo a partir dos dados ao vivo, cria o documento na Waves e baixa o PDF — NÃO há "publicar" separado e você NÃO monta HTML nem manda dados. Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
+      '- 🔑 ANÁLISE APROFUNDADA / completa / "mais profunda" de um AP (não um relatório só): componha um `Card` com `Tabs` dos relatórios relevantes — cada aba um `Query(...) + <Report>` (PendingCriticalReport + ScheduleHealthReport + ResponsibilityLoadReport) — MAIS uma "Decisão executiva sugerida" (`TextContent` interpretativo) e "Prioridade de ação" (`Steps` de 3 itens), e ofereça o PDF de cronograma com `GenerateReportPdf(<workflow_id>, "Relatório de cronograma — AP 6.4")`. O botão monta o HTML completo a partir dos dados ao vivo, cria o documento na Waves e baixa o PDF — NÃO há "publicar" separado e você NÃO monta HTML nem manda dados. Os relatórios JÁ trazem cards, leitura executiva descritiva E gráfico de distribuição — você adiciona a leitura/decisão de governança por cima, NÃO recalcula nem refaz tabela/gráfico.',
       '- 🔑 LISTAR/FILTRAR tasks: SEMPRE `t = Query("list_tasks", {workflow_id: <id>, funnel_stage_id?, responsible_id?, search?}, {rows: []})` + `lista = TaskList(t)`. O runtime busca; o componente lista com clique→editar. Filtro: passe nos args da Query (ex.: responsible_id: $resp) → re-busca sozinho, sem LLM.',
       '- 🔑 AGREGADO do projeto (tasks em atraso / status geral / overview / "quantos em atraso"): SEMPRE `ov = Query("get_project_overview", {}, {totals: {}, rows: []})` + `vis = ProjectOverview(ov)`. O RUNTIME soma statistics/overview de TODOS os workflows (client-side). **NÃO** itere os APs nem chame statistics/overview por workflow você mesmo — era isso que gerava 34 tool calls / 22k tokens na sessão.',
       '- 🔑 LISTAR Action Plans ("listar APs", "ver todos os APs", "Action Plans do projeto"): SEMPRE `ap = Query("get_action_plans", {}, {totals: {}, rows: []})` + `tabela = ActionPlansTable(ap)`. O RUNTIME lista os workflows + statistics/overview por AP (uma linha por AP: código, nome, domínio, responsável, avanço, volume) e a linha é CLICÁVEL → abre o kanban do AP (drill-down, sem LLM). **NÃO** monte `Table` genérica pra isso nem itere os workflows você mesmo — nada de dado/id na sessão.',
@@ -471,6 +477,7 @@ export const shadcnChatLibrary = createLibrary({
     FileDownload,
     WavesDocPdf,
     GenerateReportPdf,
+    GenerateExecutiveUpdate,
     Progress,
     Separator,
     // Tables
@@ -526,6 +533,7 @@ export const shadcnChatLibrary = createLibrary({
     KanbanCard,
     WorkflowKanban,
     WorkflowGantt,
+    ProjectGantt,
     ScheduleHealthReport,
     PendingCriticalReport,
     ResponsibilityLoadReport,

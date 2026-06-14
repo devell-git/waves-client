@@ -27,6 +27,7 @@ interface UserMessageViewProps {
     content?: string | MessagePart[];
     id?: string;
     timestamp?: number;
+    voice?: boolean; // mensagem veio de áudio (botão de microfone)
   };
 }
 
@@ -102,7 +103,14 @@ export function UserMessageView({ message }: UserMessageViewProps) {
               ))}
             </div>
           )}
-          {text && <div className="waves-msg-text">{text}</div>}
+          {text && (
+            <div className="waves-msg-text">
+              {message.voice && (
+                <span className="waves-msg-voice" title="Mensagem de voz (transcrita)">🎤</span>
+              )}
+              {text}
+            </div>
+          )}
         </div>
         {/* Horário FORA da bolha (abaixo), igual ao meta do agente — padroniza. */}
         <div className="waves-msg-meta waves-msg-meta--user">

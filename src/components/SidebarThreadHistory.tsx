@@ -5,6 +5,7 @@ import {
   renameThread,
   type SearchHit,
 } from "../api/threads";
+import { sanitizeHtml } from "../lib/sanitize-html";
 
 interface SidebarThreadHistoryProps {
   profileId: string;
@@ -213,7 +214,7 @@ export function SidebarThreadHistory({
                     title="Duplo-clique pra renomear"
                   >
                     {item.isSnippet ? (
-                      <span dangerouslySetInnerHTML={{ __html: item.title }} />
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.title) }} />
                     ) : (
                       item.title
                     )}

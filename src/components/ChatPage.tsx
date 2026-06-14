@@ -17,6 +17,7 @@ import { Renderer } from "@openuidev/react-lang";
 // Library custom shadcn-genui (36 componentes ricos baseados em shadcn/ui)
 // substitui o openuiChatLibrary built-in pra ter UI mais polida no chat.
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
+import { AnalysisReport } from "../lib/shadcn-genui/components/analysis-report";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { UserMessageView } from "./UserMessageView";
@@ -137,6 +138,78 @@ interface ChatPageProps {
 // bolha de chat simples.
 const OPENUI_PATTERN = /\b(root\s*=|Card\s*\(|CardHeader\s*\(|TextContent\s*\(|Table\s*\(|TagBlock\s*\(|Alert\s*\(|FollowUpItem\s*\(|(?:Pie|Bar|Line)Chart\s*\(|ListBlock\s*\(|Accordion\s*\()/;
 
+/**
+ * openui-lang NÃO aceita o literal `null` — alguns agentes o usam como
+ * placeholder posicional (ex.: `GenerateExecutiveUpdate(106, "6.4", null,
+ * "analitico")`), o que QUEBRA a renderização (vira texto cru). Removemos `null`
+ * como ARGUMENTO (fora de aspas) só nas chamadas dos nossos componentes de
+ * relatório — strings com a palavra "null" não são afetadas. Com a ordem atual
+ * dos props, remover o null já alinha os args (mode passa a ser o 3º).
+ */
+function stripNullArgs(s: string): string {
+  return s.replace(
+    /(GenerateExecutiveUpdate|GenerateReportPdf)\s*\(([^()]*)\)/g,
+    (_full, name: string, args: string) => {
+      const kept = args
+        .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+        .map((a) => a.trim())
+        .filter((a) => a !== "null" && a !== "");
+      return `${name}(${kept.join(", ")})`;
+    },
+  );
+}
+
+/**
+ * Marcador `exec_report:{...}` — emitido pela TOOL `generate_executive_report`
+ * (via skill no SOUL). É o gatilho ROBUSTO do relatório executivo: o agente não
+ * monta openui-lang (sem fragilidade de args/null). Aqui o client lê o marcador
+ * e CONSTRÓI a chamada openui-lang correta — a string é nossa, não do LLM.
+ */
+/**
+ * Marcador `analysis_report:{...}` — tool `generate_analysis_report`. Relatório
+ * ANALÍTICO/custom escrito pela IA, focado na instrução do usuário. Renderizado
+ * direto em React (a instrução é texto livre — não passa por openui-lang).
+ */
+const ANALYSIS_REPORT_RE = /analysis_report\s*:\s*(\{[\s\S]*\})/;
+function parseAnalysisReport(
+  content: string,
+): { workflow_id: number; instruction: string; ap_number?: string; scope?: string } | null {
+  const m = content.match(ANALYSIS_REPORT_RE);
+  if (!m) return null;
+  try {
+    const o = JSON.parse(m[1]) as { workflow_id?: unknown; instruction?: unknown; ap_number?: unknown; scope?: unknown };
+    const wf = Number(o.workflow_id);
+    const scope = typeof o.scope === "string" ? o.scope : undefined;
+    const isProject = scope === "project" || (!Number.isFinite(wf) && !o.ap_number);
+    if (!Number.isFinite(wf) && !isProject) return null;
+    return {
+      workflow_id: Number.isFinite(wf) ? wf : 0,
+      instruction: typeof o.instruction === "string" ? o.instruction : "Análise executiva.",
+      ap_number: o.ap_number != null ? String(o.ap_number) : undefined,
+      scope: isProject ? "project" : scope,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const EXEC_REPORT_RE = /exec_report\s*:\s*(\{[\s\S]*?\})/;
+const EXEC_MODES = ["completo", "resumido", "analitico"];
+function execReportToOpenui(content: string): string | null {
+  const m = content.match(EXEC_REPORT_RE);
+  if (!m) return null;
+  try {
+    const o = JSON.parse(m[1]) as { workflow_id?: unknown; ap_number?: unknown; mode?: unknown };
+    const wf = Number(o.workflow_id);
+    if (!Number.isFinite(wf)) return null;
+    const ap = o.ap_number != null ? String(o.ap_number).replace(/"/g, "") : "";
+    const mode = EXEC_MODES.includes(String(o.mode)) ? String(o.mode) : "completo";
+    return `root = GenerateExecutiveUpdate(${wf}, "${ap}", "${mode}")`;
+  } catch {
+    return null;
+  }
+}
+
 // Diretiva `open_create_task: {"workflow_id":..,"stage_id":..}` — o agente emite
 // só isso quando o user pede pra criar tarefa; abrimos o modal nativo direto.
 function parseCreateTaskDirective(
@@ -244,7 +317,27 @@ function GenUIAssistantMessage({
   if (!rawContent) return null;
 
   // Separa o marcador de usage do conteúdo renderável.
-  const { clean: content, usage } = extractUsage(rawContent);
+  const { clean: rawClean, usage } = extractUsage(rawContent);
+  const meta0 = <MessageMeta id={message.id} timestamp={message.timestamp} usage={usage} />;
+  // Marcador analysis_report (tool) → relatório analítico/custom escrito pela IA.
+  const analysisReq = parseAnalysisReport(rawClean);
+  if (analysisReq) {
+    return (
+      <AssistantMessageShell meta={meta0}>
+        <AnalysisReport
+          workflow_id={analysisReq.workflow_id}
+          instruction={analysisReq.instruction}
+          ap_number={analysisReq.ap_number}
+          scope={analysisReq.scope}
+        />
+      </AssistantMessageShell>
+    );
+  }
+  // Marcador exec_report (tool) → vira a chamada openui-lang correta (string
+  // nossa, à prova de null/posição). O relatório é auto-contido, então o resto
+  // do texto é descartado.
+  const execOpenui = execReportToOpenui(rawClean);
+  const content = execOpenui ?? rawClean;
   const meta = <MessageMeta id={message.id} timestamp={message.timestamp} usage={usage} />;
 
   // Diretiva de criação de tarefa → abre o modal nativo automaticamente.
@@ -304,7 +397,7 @@ function GenUIAssistantMessage({
   return (
     <AssistantMessageShell meta={meta}>
     <Renderer
-      response={bodyContent}
+      response={stripNullArgs(bodyContent)}
       library={shadcnChatLibrary}
       isStreaming={isStreaming}
       toolProvider={getToolProvider() ?? undefined}
@@ -536,6 +629,10 @@ const OPEN_KANBAN_INTENT =
 // gantt?" (a palavra não está no início).
 const OPEN_GANTT_INTENT =
   /^\s*(?:(?:abrir?|abra|mostr(?:ar|e|a)|ver|exib(?:ir|a|e)|gerar?|gere|criar?|crie|montar?|monte|quero|preciso)\b[^.?!]{0,24}\s+)?(gantt|cronograma|linha\s+do\s+tempo|timeline)\b/i;
+// Qualificador de Gantt do PROJETO inteiro (vários APs, sem um AP específico):
+// "gantt geral", "cronograma do projeto", "gantt de todos os APs", "portfólio".
+const PROJECT_GANTT_QUALIFIER =
+  /\b(geral|do\s+projeto|projeto\s+inteiro|de\s+todos|todos\s+os\s+ap|portf[óo]lio|portfolio)\b/i;
 // Extrai o rótulo do AP ("AP 6.4", "kanban/gantt/cronograma do 1", "workflow 90").
 const AP_LABEL =
   /\b(?:ap|action\s*plan|workflow|wf)\s*#?\s*(\d+(?:\.\d+)?)|(?:kanban|gantt|cronograma|timeline)\s+(?:do|da|de|no|pra|para|pro)?\s*#?\s*(\d+(?:\.\d+)?)/i;
@@ -557,6 +654,15 @@ function buildGanttOpenui(workflowId: number, label: string, name?: string): str
     `header = CardHeader("Cronograma — AP ${escOL(label)}", "${sub}")`,
     `g = Query("get_workflow_gantt", {workflow_id: ${workflowId}}, {rows: []})`,
     `gantt = WorkflowGantt(g)`,
+  ].join("\n");
+}
+
+function buildProjectGanttOpenui(): string {
+  return [
+    `root = Card([header, gantt])`,
+    `header = CardHeader("Cronograma do projeto", "Todos os workflows · expanda pra ver tarefas e subtarefas")`,
+    `pg = Query("get_project_gantt", {}, {workflows: []})`,
+    `gantt = ProjectGantt(pg)`,
   ].join("\n");
 }
 
@@ -595,6 +701,8 @@ async function tryWorkflowViewShortcut(text: string): Promise<string | null> {
   const isGantt = OPEN_GANTT_INTENT.test(text);
   const isKanban = !isGantt && OPEN_KANBAN_INTENT.test(text);
   if (!isGantt && !isKanban) return null;
+  // Gantt do PROJETO inteiro (vários APs) → ProjectGantt hierárquico, sem AP.
+  if (isGantt && PROJECT_GANTT_QUALIFIER.test(text)) return buildProjectGanttOpenui();
   const m = text.match(AP_LABEL);
   const label = m?.[1] ?? m?.[2];
   let workflowId: number | undefined;

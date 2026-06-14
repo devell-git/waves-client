@@ -7,6 +7,7 @@ import {
   type SearchHit,
   type ThreadSummary,
 } from "../api/threads";
+import { sanitizeHtml } from "../lib/sanitize-html";
 
 interface ThreadHistoryProps {
   profileId: string;
@@ -165,7 +166,7 @@ export function ThreadHistory({
                     title="Duplo-clique pra renomear"
                   >
                     {hits ? (
-                      <span dangerouslySetInnerHTML={{ __html: t.preview || fallbackTitle(t) }} />
+                      <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(t.preview || fallbackTitle(t)) }} />
                     ) : (
                       fallbackTitle(t)
                     )}

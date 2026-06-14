@@ -2076,6 +2076,7 @@ a {
 /* ─── Composer custom (upload de arquivos) ─────────────────────────────── */
 /* Botões do action-bar (o nativo usava IconButton; aqui são <button> crus). */
 .waves-composer__attach-button,
+.waves-composer__mic-button,
 .waves-composer__submit-button {
   display: inline-flex;
   align-items: center;
@@ -2087,6 +2088,35 @@ a {
   cursor: pointer;
   flex: 0 0 auto;
   transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+/* Microfone (mesma base do anexar) */
+.waves-composer__mic-button {
+  background: transparent;
+  color: var(--foreground, #111);
+  opacity: 0.7;
+}
+.waves-composer__mic-button:hover:not(:disabled) {
+  background: var(--accent, rgba(0, 0, 0, 0.06));
+  opacity: 1;
+}
+.waves-composer__mic-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+/* Gravando → vermelho pulsante */
+.waves-composer__mic-button--recording {
+  background: #ef4444;
+  color: #fff;
+  opacity: 1;
+  animation: waves-mic-pulse 1.2s ease-in-out infinite;
+}
+.waves-composer__mic-button--recording:hover:not(:disabled) {
+  background: #dc2626;
+}
+@keyframes waves-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
 }
 
 .waves-composer__attach-button {
@@ -2369,6 +2399,47 @@ a {
   animation: waves-composer-spin 0.8s linear infinite;
 }
 .waves-file-download__err {
+  font-size: 0.75rem;
+  color: var(--destructive, #dc2626);
+}
+
+/* Botões de AÇÃO de documento que NÃO passam pela Waves (export Word/HTML via
+   /api/export, download direto). Visual igual ao waves-file-download, mas classe
+   neutra pra deixar claro que não é um download de PDF da Waves. */
+.waves-doc-action-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-width: 100%;
+}
+.waves-doc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  background: var(--card, rgba(0, 0, 0, 0.03));
+  color: var(--foreground);
+  font-size: 0.88rem;
+  cursor: pointer;
+  max-width: 20rem;
+  transition: background-color 0.15s ease;
+}
+.waves-doc-action:hover:not(:disabled) {
+  background: var(--accent, rgba(0, 0, 0, 0.06));
+}
+.waves-doc-action:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.waves-doc-action__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.waves-doc-action__err {
   font-size: 0.75rem;
   color: var(--destructive, #dc2626);
 }
@@ -2670,4 +2741,62 @@ a {
   color: var(--legacy-primary, #2563eb);
   border-color: var(--legacy-primary, #2563eb);
   background: color-mix(in srgb, var(--legacy-primary, #2563eb) 10%, transparent);
+}
+
+/* Marca de mensagem de voz (🎤) no balão do usuário */
+.waves-msg-voice {
+  margin-right: 6px;
+  font-size: 0.9em;
+  opacity: 0.85;
+  vertical-align: baseline;
+}
+
+/* Estado "vai cancelar" do microfone (arrastou ◀) */
+.waves-composer__mic-button--cancel {
+  background: #b91c1c;
+  color: #fff;
+  opacity: 1;
+}
+/* Banner de gravação (estilo WhatsApp) */
+.waves-composer__rec-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 4px 0 2px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--foreground, #111);
+  background: var(--accent, rgba(0, 0, 0, 0.05));
+}
+.waves-composer__rec-hint--cancel {
+  color: #b91c1c;
+  background: rgba(185, 28, 28, 0.08);
+}
+.waves-composer__rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: #ef4444;
+  flex: 0 0 auto;
+  animation: waves-mic-pulse 1.2s ease-in-out infinite;
+}
+
+/* Botão "cancelar" dentro do banner de gravação */
+.waves-composer__rec-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid rgba(185, 28, 28, 0.4);
+  border-radius: 9999px;
+  background: transparent;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.waves-composer__rec-cancel:hover {
+  background: rgba(185, 28, 28, 0.1);
 }

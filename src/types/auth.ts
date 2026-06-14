@@ -30,6 +30,13 @@ export type AgentItem = {
    *  - "Off": nunca usa reasoning (rápido), SEM mostrar o botão.
    *  - "Selectable": mostra o botão; default desligado (rápido). */
   reasoning?: "On" | "Off" | "Selectable" | string | null;
+  /** Tipos de documento (DocumentType) que ESTE agente pode gerar — escopo
+   *  vindo do login. Usado pra escolher o `document_type_id` na criação de
+   *  documentos (1 → usa direto; >1 → o usuário escolhe num select). NUNCA
+   *  hardcodar o tipo: o modelo/nomenclatura do PDF vem do DocumentType. */
+  document_type_ids?: number[];
+  /** Relação expandida do mesmo escopo (cada item tem ao menos `id`). */
+  document_types?: Array<{ id: number; name?: string; [key: string]: unknown }>;
   [key: string]: unknown;
 };
 

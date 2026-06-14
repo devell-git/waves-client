@@ -31,6 +31,9 @@ import { getProgress } from "./tool-progress.js";
 import { DEFAULT_OPENAI_MODEL } from "./waves-prompt.js";
 import { loadOpenUISpec } from "./openui-spec.js";
 import { uploadsRouter } from "./uploads.js";
+import { exportRouter } from "./export.js";
+import { analyzeRouter, analysisReportRouter } from "./analyze.js";
+import { transcribeRouter } from "./transcribe.js";
 import { ensureFilesDir, filesRouter } from "./files.js";
 import {
   createNotification,
@@ -571,6 +574,16 @@ app.get("/api/openui/spec", async (_req, res) => {
 // --- Upload de arquivos do chat (multipart) --------------------------------
 // POST /api/uploads → salva + extrai texto. GET /api/uploads/:id → original.
 app.use("/api/uploads", uploadsRouter);
+
+// --- Export do documento em Word (.doc) / HTML (PDF é nativo da Waves) -------
+app.use("/api/export", exportRouter);
+
+// --- Análise descritiva (modo analítico do relatório) → modelo do agente -----
+app.use("/api/analyze-report", analyzeRouter);
+// Relatório analítico/custom escrito pela IA (focado na instrução do usuário).
+app.use("/api/analysis-report", analysisReportRouter);
+// Transcrição de áudio via Whisper local (botão de microfone no composer).
+app.use("/api/transcribe", transcribeRouter);
 
 // --- Arquivos enviados PELO AGENTE pro usuário (download seguro) ------------
 // GET /api/files/:id (auth Bearer + ownership + attachment). POST /api/files.
