@@ -67,6 +67,9 @@ import { Tag, TagBlock } from "./components/tag";
 // Chat-specific
 import { FollowUpBlock, FollowUpItem } from "./components/follow-up-block";
 
+// File upload
+import { FileUpload } from "./components/file-upload";
+
 // New components
 import { AlertDialogBlock } from "./components/alert-dialog-block";
 import { CalendarBlock } from "./components/calendar-block";
@@ -201,6 +204,7 @@ export const shadcnComponentGroups: ComponentGroup[] = [
       "RadioItem",
       "SwitchGroup",
       "SwitchItem",
+      "FileUpload",
     ],
     notes: [
       "- Define EACH FormControl as its own reference — do NOT inline all controls in one array.",
@@ -514,6 +518,7 @@ export const shadcnChatLibrary = createLibrary({
     RadioItem,
     SwitchGroup,
     SwitchItem,
+    FileUpload,
     // Buttons
     Button,
     Buttons,

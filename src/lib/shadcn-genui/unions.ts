@@ -38,6 +38,7 @@ import { TagBlock } from "./components/tag";
 import { Avatar } from "./components/avatar";
 import { Buttons } from "./components/buttons";
 import { CardHeader } from "./components/card-header";
+import { FileUpload } from "./components/file-upload";
 import { Form } from "./components/form";
 
 export const ContentChildUnion = z.union([
@@ -68,6 +69,7 @@ export const ContentChildUnion = z.union([
   ActionPlansTable.ref,
   TagBlock.ref,
   Form.ref,
+  FileUpload.ref,
   Buttons.ref,
   Heading.ref,
   Blockquote.ref,

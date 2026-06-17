@@ -56,6 +56,11 @@ import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import { getKanbanCtx } from "../lib/kanban-context";
+import {
+  consumeCreateTask,
+  wasCreateTaskConsumed,
+  setCreateTaskThreadKey,
+} from "../lib/createtask-consumed";
 import { loadShortcuts, saveShortcutExchange } from "../lib/shortcut-history";
 import {
   ensureToolProvider,
@@ -236,21 +241,35 @@ function parseCreateTaskDirective(
 
 // Abre o modal de criação ao montar (dispara waves:create-task). Usa o workflow
 // da diretiva OU, se ausente, o do kanban exibido por último (determinístico).
+//
+// A diretiva é uma MENSAGEM persistida no histórico — então este componente
+// re-monta a cada reload/troca de chat. Sem guarda, o modal reabriria sozinho
+// (zumbi). `consumeCreateTask` marca cada diretiva (thread+conteúdo) → auto-abre
+// SÓ na 1ª vez (mensagem ao vivo); depois vira um link de reabrir manual.
 function CreateTaskTrigger({
   directive,
+  content,
 }: {
   directive: { workflowId?: number; stageId?: number };
+  content: string;
 }) {
   const wf = directive.workflowId ?? getKanbanCtx().workflowId;
   const st = directive.stageId ?? getKanbanCtx().stageId;
-  useEffect(() => {
-    // Abre sempre — sem workflow o modal mostra o seletor.
+  // Leitura pura no render (sem efeito colateral): a diretiva já foi consumida?
+  const fresh = !wasCreateTaskConsumed(content);
+  const open = () =>
     window.dispatchEvent(
       new CustomEvent("waves:create-task", {
         detail: { workflowId: wf, stageId: st },
       }),
     );
-    // só no mount
+  useEffect(() => {
+    // Re-checa dentro do efeito: cobre o double-invoke do StrictMode e garante
+    // exatamente UM auto-open por diretiva. Sem workflow o modal mostra o seletor.
+    if (wasCreateTaskConsumed(content)) return;
+    consumeCreateTask(content);
+    open();
+    // só no mount; a decisão de abrir mora na guarda acima
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
@@ -258,7 +277,25 @@ function CreateTaskTrigger({
       className="assistant-plain-text"
       style={{ padding: "0.75rem 1rem", opacity: 0.8 }}
     >
-      Abrindo o formulário de nova tarefa…
+      {fresh ? (
+        "Abrindo o formulário de nova tarefa…"
+      ) : (
+        <button
+          type="button"
+          onClick={open}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            color: "inherit",
+            font: "inherit",
+            textDecoration: "underline",
+            cursor: "pointer",
+          }}
+        >
+          Abrir formulário de nova tarefa
+        </button>
+      )}
     </div>
   );
 }
@@ -345,7 +382,7 @@ function GenUIAssistantMessage({
   if (createDir) {
     return (
       <AssistantMessageShell meta={meta}>
-        <CreateTaskTrigger directive={createDir} />
+        <CreateTaskTrigger directive={createDir} content={content} />
       </AssistantMessageShell>
     );
   }
@@ -523,6 +560,26 @@ function WelcomeArea({
 // progress bar + resultado inline (vale pra ybrax E bioshield specialists).
 // O antigo SpecialistJobPoller (hook use-pending-specialist-jobs) foi removido
 // pra não duplicar polling/mensagens.
+
+// Bridge: vive DENTRO do ChatProvider, conecta o evento waves:file-upload-complete
+// ao processMessage do useThread. Renderiza nada.
+function FileUploadBridge({ bridgeRef }: { bridgeRef: React.MutableRefObject<((files: any[]) => void) | null> }) {
+  const sendMsg = useThread((s) => s.processMessage);
+  useEffect(() => {
+    bridgeRef.current = (files) => {
+      const parts: Array<
+        | { type: "text"; text: string }
+        | { type: "binary"; mimeType: string; url: string; filename: string }
+      > = [];
+      for (const f of files) {
+        parts.push({ type: "binary", mimeType: f.mimeType, url: f.url, filename: f.filename });
+      }
+      sendMsg({ role: "user", content: parts });
+    };
+    return () => { bridgeRef.current = null; };
+  }, [sendMsg, bridgeRef]);
+  return null;
+}
 
 // Auto-sincroniza o threadId selecionado quando o ChatProvider monta —
 // chama selectThread após fetchThreadList carregar pela primeira vez.
@@ -881,6 +938,11 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     return stored || newThreadId();
   });
 
+  // Escopo do dedupe do auto-open de tarefa = thread ativa. Gravado no render
+  // (mesmo padrão do kanban-context) pra já estar setado quando o efeito de um
+  // CreateTaskTrigger filho rodar (efeitos de filho rodam antes do do pai).
+  setCreateTaskThreadKey(`${threadKeyPrefix}${activeThreadId}`);
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(lsThreadKey(activeProfile), activeThreadId);
@@ -1193,7 +1255,23 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     ],
   );
 
+  // FileUpload openui component: armazena arquivos e despacha via global ref.
+  // O listener real (que chama processMessage do useThread) é registrado
+  // dentro do ChatProvider por _FileUploadBridge abaixo.
+  const fileUploadRef = useRef<((files: UploadedFile[]) => void) | null>(null);
+  useEffect(() => {
+    const h = (e: Event) => {
+      const files = (e as CustomEvent<{ files: UploadedFile[] }>).detail?.files;
+      if (!files?.length) return;
+      attachmentsRef.current = files;
+      fileUploadRef.current?.(files);
+    };
+    window.addEventListener("waves:file-upload-complete", h);
+    return () => window.removeEventListener("waves:file-upload-complete", h);
+  }, []);
+
   // Drawer mobile da sidebar de conversas (#2). Fecha ao trocar de thread.
+  // (FileUploadBridge defined below, inside return, uses useThread inside ChatProvider)
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const handleSessionExpired = useCallback(() => {
@@ -1273,6 +1351,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             updateThread={threadAdapters.updateThread}
             deleteThread={threadAdapters.deleteThread}
           >
+            <FileUploadBridge bridgeRef={fileUploadRef} />
             <ThreadSelector targetThreadId={activeThreadId} />
             <ThreadRestorer profileId={activeProfile} fullThreadKey={fullThreadKey} />
             <ChatAppendListener />

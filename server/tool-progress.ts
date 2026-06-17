@@ -93,6 +93,35 @@ function humanizeProgress(tool: string, label?: string): string {
     return "Acionando um especialista…";
   }
 
+  // --- MCP Omie (erelab) ---
+  if (tool.includes("omie_listar_produtos")) return "Consultando catálogo no Omie…";
+  if (tool.includes("omie_consultar_produto")) return "Buscando detalhes do produto…";
+  if (tool.includes("omie_pesquisar_estoque")) return "Verificando estoque no Omie…";
+  if (tool.includes("omie_relatorio_estoque")) return "Montando relatório de estoque…";
+  if (tool.includes("omie_calcular_custo")) return "Calculando custo do projeto…";
+  if (tool.includes("omie_listar_pedidos")) return "Buscando pedidos de venda…";
+  if (tool.includes("omie")) return "Consultando o Omie…";
+
+  // --- MCP IAPP (erelab) ---
+  if (tool.includes("iapp_listar_produtos")) return "Buscando produtos no IAPP…";
+  if (tool.includes("iapp_consultar_produto")) return "Consultando produto no IAPP…";
+  if (tool.includes("iapp_listar_fichas")) return "Buscando fichas técnicas…";
+  if (tool.includes("iapp_consultar_ficha")) return "Lendo ficha técnica com BOM…";
+  if (tool.includes("iapp_listar_ordens")) return "Buscando ordens de produção…";
+  if (tool.includes("iapp_consultar_ordem")) return "Detalhando ordem de produção…";
+  if (tool.includes("iapp_materiais_previstos")) return "Levantando materiais da OP…";
+  if (tool.includes("iapp_consumos")) return "Verificando consumos da OP…";
+  if (tool.includes("iapp_listar_lotes")) return "Buscando lotes de estoque…";
+  if (tool.includes("iapp_listar_depositos")) return "Consultando depósitos…";
+  if (tool.includes("iapp_estoques")) return "Verificando posição de estoque…";
+  if (tool.includes("iapp")) return "Consultando o IAPP…";
+
+  // --- MCP Markitdown ---
+  if (tool.includes("converter_arquivo")) return "Lendo o arquivo enviado…";
+
+  // --- Python sandbox ---
+  if (tool.includes("python_sandbox") || tool.includes("run_python")) return "Processando dados…";
+
   // Genérico
   return "Trabalhando nisso…";
 }
