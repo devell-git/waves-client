@@ -6,6 +6,7 @@ import { buildAnalysisChartsHtml, buildProjectChartsHtml, type ExecTask } from "
 import { sanitizeHtml } from "../../sanitize-html";
 import { rawJson, useWavesDoc } from "../waves-doc";
 import { loadSession } from "../../session";
+import { getCachedReport, putCachedReport } from "../../report-cache";
 import { getActiveGateway } from "../../../api/threads";
 import { getWorkflowList, loadWorkflowTasksFull } from "../../openui-tools";
 
@@ -127,9 +128,19 @@ export function AnalysisReport({
   const doc = useWavesDoc(filename);
   const started = useRef(false);
 
+  // Idempotência (task #791): se já geramos este relatório nesta thread, hidrata o
+  // HTML salvo em vez de re-buscar — senão o reload/remount regenera (LLM) um
+  // relatório DIFERENTE. Chave = thread + params do marcador.
+  const cacheKey = `analysis:${wid}:${ap_number ?? ""}:${scope ?? ""}:${instruction}`;
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+    const cached = getCachedReport(cacheKey);
+    if (cached) {
+      setHtml(cached);
+      setStage("ready");
+      return;
+    }
     (async () => {
       try {
         // ── Modo PROJETO: agrega TODOS os APs (números consistentes) ──────────
@@ -154,7 +165,9 @@ export function AnalysisReport({
           });
           const j2 = (await r2.json().catch(() => ({}))) as { html?: string; error?: string };
           if (!r2.ok || !j2.html) throw new Error(j2.error || "A IA não retornou o relatório");
-          setHtml(j2.html + buildProjectChartsHtml(psum));
+          const fullHtml = j2.html + buildProjectChartsHtml(psum);
+          setHtml(fullHtml);
+          putCachedReport(cacheKey, fullHtml);
           setStage("ready");
           return;
         }
@@ -190,7 +203,9 @@ export function AnalysisReport({
         const j = (await r.json().catch(() => ({}))) as { html?: string; error?: string };
         if (!r.ok || !j.html) throw new Error(j.error || "A IA não retornou o relatório");
         // Narrativa (IA) + gráficos DETERMINÍSTICOS (números exatos dos dados).
-        setHtml(j.html + buildAnalysisChartsHtml(summary));
+        const fullHtml = j.html + buildAnalysisChartsHtml(summary);
+        setHtml(fullHtml);
+        putCachedReport(cacheKey, fullHtml);
         setStage("ready");
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Falha ao gerar o relatório analítico");

@@ -61,6 +61,7 @@ import {
   wasCreateTaskConsumed,
   setCreateTaskThreadKey,
 } from "../lib/createtask-consumed";
+import { setReportThreadKey } from "../lib/report-cache";
 import { loadShortcuts, saveShortcutExchange } from "../lib/shortcut-history";
 import {
   ensureToolProvider,
@@ -942,6 +943,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   // (mesmo padrão do kanban-context) pra já estar setado quando o efeito de um
   // CreateTaskTrigger filho rodar (efeitos de filho rodam antes do do pai).
   setCreateTaskThreadKey(`${threadKeyPrefix}${activeThreadId}`);
+  setReportThreadKey(`${threadKeyPrefix}${activeThreadId}`);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
