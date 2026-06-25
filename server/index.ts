@@ -28,6 +28,7 @@ import {
   type GatewayCtx,
 } from "./thread-history.js";
 import { getProgress } from "./tool-progress.js";
+import { allRenderedBases, rememberJobBackend, renderedUrlForJob } from "./specialist-jobs.js";
 import { DEFAULT_OPENAI_MODEL } from "./waves-prompt.js";
 import { loadOpenUISpec } from "./openui-spec.js";
 import { uploadsRouter } from "./uploads.js";
@@ -49,7 +50,7 @@ import {
   setWavesCache,
 } from "./waves-cache.js";
 import { getWavesUser, type WavesSession } from "./waves-client.js";
-import { userIdFromBearer } from "./auth-user.js";
+import { userIdFromBearer, isAdminFromBearer } from "./auth-user.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -430,6 +431,38 @@ app.post("/api/notifications", async (req, res) => {
   }
 });
 
+// Ingest server-to-server (pipeline do Hermes: notify_task_user) — autenticado por
+// SERVICE-KEY (X-Ingest-Key = NOTIFY_INGEST_KEY), pois o caller NÃO tem Bearer de
+// usuário. `tenant` vem EXPLÍCITO no corpo (não há host/ALS numa chamada de servidor).
+// Doutrina §1: Hermes só entrega por HTTP, nunca escreve o notifications.db direto.
+app.post("/api/notifications/ingest", async (req, res) => {
+  const expected = (process.env.NOTIFY_INGEST_KEY ?? "").trim();
+  const key = String(req.headers["x-ingest-key"] ?? "").trim();
+  if (!expected || key !== expected)
+    return res.status(401).json({ error: "ingest key inválida ou ausente." });
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const tenant = String(b.tenant ?? "");
+  const profile = String(b.profile ?? "");
+  const userId = String(b.user_id ?? "");
+  const title = String(b.title ?? "");
+  if (!tenant || !profile || !userId || !title)
+    return res.status(400).json({ error: "tenant, profile, user_id, title required" });
+  try {
+    const id = createNotification({
+      tenant,
+      profile,
+      userId,
+      type: b.type ? String(b.type) : undefined,
+      title,
+      body: b.body != null ? String(b.body) : undefined,
+      data: b.data,
+    });
+    res.json({ id });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 app.post("/api/notifications/read-all", async (req, res) => {
   const me = await userIdFromBearer(req.headers.authorization as string | undefined);
   if (me == null) return res.status(401).json({ error: "Autenticação necessária." });
@@ -535,27 +568,146 @@ app.get("/api/chat/progress", (_req, res) => {
 const RENDERED_API_BASE = (
   process.env.RENDERED_API_URL ?? "http://127.0.0.1:18861"
 ).replace(/\/+$/, "");
+// Jobs de SUPORTE (`support-<task_id>`) vão pra um rendered_api próprio que lê a
+// task wf56 (support_rendered_api.py). Roteamento por prefixo — generaliza o
+// proxy sem acoplar ao rendered_api do Steve (:18861).
+const SUPPORT_RENDERED_BASE = (
+  process.env.SUPPORT_RENDERED_URL ?? "http://127.0.0.1:18882"
+).replace(/\/+$/, "");
 
 app.get("/api/specialist-jobs/:id/rendered", async (req, res) => {
   const jobId = req.params.id;
   if (!/^[a-zA-Z0-9_-]+$/.test(jobId)) {
     return res.status(400).json({ error: "job_id inválido" });
   }
+  // Resolução do rendered_api correto:
+  // 1) backend aprendido na injeção do marcador (rota por assistente/tenant) → 1 candidato;
+  // 2) jobs de suporte (`support-<task_id>`) → rendered de suporte;
+  // 3) caso contrário (map-miss: ex. após restart) → sonda as bases conhecidas
+  //    (default primeiro) e fica na 1ª que CONHECE o job; cacheia o vencedor.
+  const learned = renderedUrlForJob(jobId);
+  const candidates = learned
+    ? [learned]
+    : jobId.startsWith("support")
+      ? [SUPPORT_RENDERED_BASE]
+      : Array.from(new Set([RENDERED_API_BASE, ...allRenderedBases()]));
+  let last: { status: number; ct: string; text: string } | null = null;
+  for (const base of candidates) {
+    try {
+      const upstream = await fetch(
+        `${base}/specialist-jobs/${encodeURIComponent(jobId)}/rendered`,
+        { signal: AbortSignal.timeout(150_000) },
+      );
+      const text = await upstream.text();
+      const ct = upstream.headers.get("content-type") ?? "application/json";
+      last = { status: upstream.status, ct, text };
+      // Backend que CONHECE o job? (200 e não "not_found") → cacheia e encerra.
+      if (upstream.ok && !/"status"\s*:\s*"not_found"/.test(text)) {
+        if (!learned) rememberJobBackend(jobId, base);
+        break;
+      }
+    } catch (err) {
+      // Base offline/timeout — tenta a próxima; só vira 502 se TODAS falharem.
+      const msg = err instanceof Error ? err.message : "rendered_api offline";
+      last = last ?? {
+        status: 502,
+        ct: "application/json",
+        text: JSON.stringify({ status: "proxy_error", error: `rendered_api unreachable: ${msg}` }),
+      };
+    }
+  }
+  if (last) {
+    res.status(last.status);
+    res.set("Content-Type", last.ct);
+    res.send(last.text);
+  } else {
+    res.status(502).json({ status: "proxy_error", error: "nenhum rendered_api respondeu" });
+  }
+});
+
+// --- Proxy pro hermes-graph-api (Architecture Explorer #848) ---------------
+// Desacoplado (§1): o waves_client NÃO lê o FS do Hermes — proxia o registry.json
+// servido pelo serve.py em :18820 (mesmo padrão do rendered_api). ?refresh=1 força
+// re-scan no lado Hermes.
+const GRAPH_API_BASE = (process.env.GRAPH_API_URL ?? "http://127.0.0.1:18820").replace(/\/+$/, "");
+app.get("/api/architecture/graph", async (req, res) => {
+  // #848 — ADMIN-ONLY: o grafo expõe estrutura interna (profiles/MCPs/workers/
+  // patches/tenants). Admin derivado do Bearer (auth-user), nunca de query.
+  if (!(await isAdminFromBearer(req.headers.authorization as string | undefined))) {
+    return res.status(403).json({ error: "Apenas administradores podem ver os grafos." });
+  }
+  const qs = req.query.refresh === "1" ? "?refresh=1" : "";
   try {
-    const upstream = await fetch(
-      `${RENDERED_API_BASE}/specialist-jobs/${encodeURIComponent(jobId)}/rendered`,
-      { signal: AbortSignal.timeout(150_000) },
-    );
+    const upstream = await fetch(`${GRAPH_API_BASE}/architecture/graph${qs}`, {
+      signal: AbortSignal.timeout(60_000),
+    });
     const text = await upstream.text();
     res.status(upstream.status);
     res.set("Content-Type", upstream.headers.get("content-type") ?? "application/json");
     res.send(text);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "rendered_api offline";
-    res.status(502).json({
-      status: "proxy_error",
-      error: `rendered_api unreachable: ${msg}`,
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `graph-api unreachable: ${msg}` });
+  }
+});
+
+// --- Proxy SSE pro hermes-graph-api (Architecture Explorer #858) -----------
+// SSE de atividade dos agentes em tempo real. Admin-only. O servidor mantém a
+// conexão aberta e repassa os eventos do serve.py (collector → events.jsonl).
+app.get("/api/architecture/stream", async (req, res) => {
+  if (!(await isAdminFromBearer(req.headers.authorization as string | undefined))) {
+    return res.status(403).json({ error: "Apenas administradores podem ver os grafos." });
+  }
+  // SSE headers
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders();
+
+  try {
+    const upstream = await fetch(`${GRAPH_API_BASE}/architecture/stream`, {
+      signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(3_600_000),
     });
+    if (!upstream.ok || !upstream.body) {
+      res.write(`event: error\ndata: {"error":"upstream ${upstream.status}"}\n\n`);
+      res.end();
+      return;
+    }
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    const pump = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || req.socket.destroyed) break;
+        res.write(decoder.decode(value, { stream: true }));
+      }
+    };
+    await pump();
+  } catch (err) {
+    if (!req.socket.destroyed) {
+      res.write(`event: error\ndata: {"error":"${err instanceof Error ? err.message : "unknown"}"}\n\n`);
+    }
+  }
+  res.end();
+});
+
+// --- Proxy activity snapshot (Architecture Explorer #858) ------------------
+app.get("/api/architecture/activity", async (req, res) => {
+  if (!(await isAdminFromBearer(req.headers.authorization as string | undefined))) {
+    return res.status(403).json({ error: "Apenas administradores." });
+  }
+  const qs = req.query.refresh === "1" ? "?refresh=1" : "";
+  try {
+    const upstream = await fetch(`${GRAPH_API_BASE}/architecture/activity${qs}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    const text = await upstream.text();
+    res.status(upstream.status).set("Content-Type", "application/json").send(text);
+  } catch (err) {
+    res.status(502).json({ error: `graph-api unreachable: ${err instanceof Error ? err.message : "unknown"}` });
   }
 });
 

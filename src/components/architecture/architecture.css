@@ -1,0 +1,525 @@
+/* Architecture Explorer (#849) — estilos isolados desta tela.
+   Segue o padrão do projeto: CSS plano global + custom properties do tema
+   (:root / [data-theme="dark"] do index.css). Prefixo .arch-* pra não colidir. */
+
+.arch-explorer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background, #f7f7f8);
+  color: var(--foreground, #18181b);
+  z-index: 10;
+}
+
+.arch-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--legacy-border, #e4e4e7);
+  background: var(--surface, #fff);
+  flex-shrink: 0;
+}
+
+.arch-back {
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background-color 0.15s ease;
+}
+.arch-back:hover {
+  background: var(--background, #f1f1f3);
+}
+
+.arch-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.arch-header-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted-foreground, #71717a);
+}
+
+.arch-refresh {
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.arch-refresh:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.arch-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.arch-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* React Flow ocupa todo o canvas */
+.arch-canvas .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.arch-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  color: var(--muted-foreground, #71717a);
+}
+.arch-state--error {
+  color: #dc2626;
+  padding: 1rem;
+  text-align: center;
+}
+
+/* ── Custom node ──────────────────────────────────────────────────────── */
+.arch-node {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 188px;
+  padding: 0.45rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  border-left-width: 4px;
+  background: var(--surface, #fff);
+  color: var(--foreground, #18181b);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  font-size: 0.78rem;
+}
+
+.arch-node-icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.arch-node-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.arch-node-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arch-node-kind {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground, #a1a1aa);
+}
+
+.arch-handle {
+  width: 6px;
+  height: 6px;
+  background: var(--muted-foreground, #a1a1aa);
+  border: none;
+}
+
+/* ── Métricas no node (#851) ──────────────────────────────────────────── */
+.arch-node-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.28rem;
+}
+.arch-q {
+  font-size: 0.6rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  background: var(--background, #f1f1f3);
+  color: var(--muted-foreground, #52525b);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.arch-circuit {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.32rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  color: #fff;
+  background: #64748b;
+}
+.arch-circuit--CLOSED { background: #16a34a; }
+.arch-circuit--OPEN { background: #dc2626; }
+.arch-circuit--HALF_OPEN,
+.arch-circuit--HALF-OPEN { background: #d97706; }
+
+/* ── Botão "Ao vivo" (#851) ───────────────────────────────────────────── */
+.arch-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.arch-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-foreground, #a1a1aa);
+}
+.arch-live--on {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+.arch-live--on .arch-live-dot {
+  background: #16a34a;
+  animation: arch-pulse 1.4s ease-in-out infinite;
+}
+@keyframes arch-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5); }
+  50% { opacity: 0.5; box-shadow: 0 0 0 4px rgba(22, 163, 74, 0); }
+}
+
+/* Cor da borda esquerda por tipo (espelha ARCH_TYPE_COLOR em nodes.tsx) */
+.arch-node--tenant { border-left-color: #8b5cf6; }
+.arch-node--profile { border-left-color: #2563eb; }
+.arch-node--mcp { border-left-color: #0891b2; }
+.arch-node--skill { border-left-color: #16a34a; }
+.arch-node--plugin { border-left-color: #d97706; }
+.arch-node--worker { border-left-color: #dc2626; }
+.arch-node--patch { border-left-color: #64748b; }
+.arch-node--other { border-left-color: #94a3b8; }
+
+/* Node selecionado (#850) */
+.arch-node--selected {
+  box-shadow: 0 0 0 2px #2563eb, 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+/* ── Arestas por tipo ─────────────────────────────────────────────────── */
+.react-flow__edge.arch-edge--mounts .react-flow__edge-path { stroke: #0891b2; }
+.react-flow__edge.arch-edge--uses .react-flow__edge-path { stroke: #16a34a; }
+.react-flow__edge.arch-edge--loads .react-flow__edge-path { stroke: #d97706; }
+.react-flow__edge.arch-edge--runs .react-flow__edge-path { stroke: #dc2626; }
+
+/* Aresta conectada ao node selecionado (#850) */
+.react-flow__edge.arch-edge--active .react-flow__edge-path {
+  stroke-width: 2.5;
+  opacity: 1;
+}
+
+/* ── Filtros / legenda interativa (#850) ─────────────────────────────── */
+.arch-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: 16rem;
+  padding: 0.5rem;
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.arch-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  background: transparent;
+  color: var(--foreground, #18181b);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.arch-filter:hover {
+  background: var(--background, #f1f1f3);
+}
+.arch-filter--off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.arch-filter-count {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.66rem;
+  color: var(--muted-foreground, #a1a1aa);
+}
+
+/* ── Busca (#850) ─────────────────────────────────────────────────────── */
+.arch-search {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.arch-search input {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+  outline: none;
+  width: 11rem;
+}
+.arch-search button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.arch-search-msg {
+  font-size: 0.7rem;
+  color: #dc2626;
+}
+
+/* ── Sidebar de detalhes (#850) ───────────────────────────────────────── */
+.arch-sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--legacy-border, #e4e4e7);
+  background: var(--surface, #fff);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.arch-sidebar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-top: 3px solid #2563eb;
+  border-bottom: 1px solid var(--legacy-border, #e4e4e7);
+}
+.arch-sidebar-kind {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.arch-sidebar-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.15rem 0 0;
+  word-break: break-word;
+}
+.arch-sidebar-close {
+  border: none;
+  background: transparent;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted-foreground, #71717a);
+}
+.arch-sidebar-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--legacy-border, #efeff1);
+}
+.arch-sidebar-section h3 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground, #a1a1aa);
+  margin: 0 0 0.5rem;
+}
+.arch-sidebar-data {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.arch-sidebar-datarow {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+}
+.arch-sidebar-datarow dt {
+  color: var(--muted-foreground, #71717a);
+  font-weight: 500;
+}
+.arch-sidebar-datarow dd {
+  margin: 0;
+  word-break: break-word;
+}
+.arch-sidebar-empty {
+  font-size: 0.78rem;
+  color: var(--muted-foreground, #a1a1aa);
+  margin: 0;
+}
+.arch-sidebar-rels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.arch-rel {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.76rem;
+  text-align: left;
+}
+.arch-rel:hover {
+  background: var(--background, #f1f1f3);
+  border-color: var(--legacy-border, #e4e4e7);
+}
+.arch-rel-dir {
+  color: var(--muted-foreground, #a1a1aa);
+  flex-shrink: 0;
+}
+.arch-rel-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.arch-rel-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.arch-rel-type {
+  font-size: 0.66rem;
+  color: var(--muted-foreground, #a1a1aa);
+  flex-shrink: 0;
+}
+
+/* ── Legenda ──────────────────────────────────────────────────────────── */
+.arch-legend {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--legacy-border, #e4e4e7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-size: 0.72rem;
+  z-index: 5;
+  pointer-events: none;
+}
+.arch-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--foreground, #18181b);
+}
+.arch-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────── */
+[data-theme="dark"] .arch-explorer {
+  background: var(--background, #18181b);
+}
+[data-theme="dark"] .arch-node,
+[data-theme="dark"] .arch-header,
+[data-theme="dark"] .arch-legend,
+[data-theme="dark"] .arch-filters,
+[data-theme="dark"] .arch-search,
+[data-theme="dark"] .arch-sidebar {
+  background: var(--surface, #27272a);
+}
+[data-theme="dark"] .react-flow__controls button {
+  background: var(--surface, #27272a);
+  color: var(--foreground, #fafafa);
+  border-color: var(--legacy-border, #3f3f46);
+}
+
+/* === SSE Activity: node pulse animation === */
+@keyframes arch-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+}
+.arch-node--active {
+  animation: arch-pulse 1.5s ease-in-out infinite;
+  border-color: #22c55e !important;
+}
+
+/* === Sidebar: activity feed === */
+.arch-sidebar-activity {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.78rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.arch-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--legacy-border, #e4e4e7);
+}
+.arch-activity-dot {
+  font-size: 0.65rem;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+.arch-activity-tool {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arch-activity-ts {
+  font-size: 0.65rem;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .arch-activity-item {
+  border-color: var(--legacy-border, #3f3f46);
+}
