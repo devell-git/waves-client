@@ -205,10 +205,27 @@
   width: 14px;
   text-align: center;
 }
-.soc-event-dot--tool_call { color: #3b82f6; }
-.soc-event-dot--tool_result { color: #22c55e; }
-.soc-event-dot--user_msg { color: #f59e0b; }
-.soc-event-dot--assistant_msg { color: #a78bfa; }
+.soc-event-badge {
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: center;
+}
+.soc-event-badge--tool_call { background: #1e3a5f; color: #60a5fa; }
+.soc-event-badge--tool_result { background: #14532d; color: #4ade80; }
+.soc-event-badge--user_msg { background: #422006; color: #fbbf24; }
+.soc-event-badge--assistant_msg { background: #2e1065; color: #c4b5fd; }
+.soc-event-label {
+  font-size: 0.65rem;
+  color: #71717a;
+  flex-shrink: 0;
+  width: 50px;
+}
 .soc-event-profile {
   color: #a1a1aa;
   font-size: 0.72rem;

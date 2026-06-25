@@ -159,25 +159,32 @@ function Timeline({
         {display.length === 0 && (
           <p className="soc-empty">Aguardando eventos…</p>
         )}
-        {display.map((ev, i) => (
-          <div key={`${ev.ts}-${ev.tool}-${i}`} className="soc-event">
-            <span className="soc-event-ts">
-              {new Date(ev.ts).toLocaleTimeString("pt-BR", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
-            </span>
-            <span
-              className={`soc-event-dot soc-event-dot--${ev.event}`}
-              title={ev.event}
-            >
-              {ev.event === "tool_call" ? "→" : ev.event === "tool_result" ? "←" : ev.event === "user_msg" ? "💬" : "🤖"}
-            </span>
-            <span className="soc-event-profile">{ev.profile}</span>
-            <span className="soc-event-tool">{ev.tool}</span>
-          </div>
-        ))}
+        {display.map((ev, i) => {
+          const meta: Record<string, { tag: string; label: string }> = {
+            tool_call: { tag: "CALL", label: "Tool" },
+            tool_result: { tag: "RESP", label: "Tool" },
+            user_msg: { tag: "USR", label: "Usuário" },
+            assistant_msg: { tag: "BOT", label: "Agente" },
+          };
+          const m = meta[ev.event] ?? { tag: "?", label: ev.event };
+          return (
+            <div key={`${ev.ts}-${ev.tool}-${i}`} className="soc-event">
+              <span className="soc-event-ts">
+                {new Date(ev.ts).toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </span>
+              <span className={`soc-event-badge soc-event-badge--${ev.event}`}>
+                {m.tag}
+              </span>
+              <span className="soc-event-label">{m.label}</span>
+              <span className="soc-event-profile">{ev.profile}</span>
+              <span className="soc-event-tool">{ev.tool}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
