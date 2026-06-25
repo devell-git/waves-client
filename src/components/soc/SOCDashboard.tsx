@@ -182,6 +182,12 @@ function Timeline({
               <span className="soc-event-label">{m.label}</span>
               <span className="soc-event-profile">{ev.profile}</span>
               <span className="soc-event-tool">{ev.tool}</span>
+              {ev.detail && (
+                <details className="soc-event-detail">
+                  <summary>detalhes</summary>
+                  <pre className="soc-event-detail-pre">{ev.detail}</pre>
+                </details>
+              )}
             </div>
           );
         })}

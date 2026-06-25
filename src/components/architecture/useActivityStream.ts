@@ -8,6 +8,7 @@ export interface ActivityEvent {
   profile: string;
   event: "tool_call" | "tool_result" | "user_msg" | "assistant_msg";
   tool: string; // tool name for tool_call/result, message preview for user/assistant_msg
+  detail?: string; // tool arguments (tool_call), tool output (tool_result), or empty
   session_id?: number;
   user_id?: string;
   source?: string;

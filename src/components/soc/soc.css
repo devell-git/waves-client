@@ -332,3 +332,29 @@
   .soc-agent { width: auto; flex: 0 0 auto; }
   .soc-tool-name { width: 120px; }
 }
+
+/* Event detail (expandable) */
+.soc-event-detail {
+  width: 100%;
+  margin-top: 0.2rem;
+}
+.soc-event-detail summary {
+  font-size: 0.6rem;
+  color: #52525b;
+  cursor: pointer;
+  user-select: none;
+}
+.soc-event-detail summary:hover { color: #a1a1aa; }
+.soc-event-detail-pre {
+  font-family: monospace;
+  font-size: 0.65rem;
+  color: #a1a1aa;
+  background: #111118;
+  padding: 0.4rem;
+  border-radius: 4px;
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  overflow-y: auto;
+}
