@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import type { CSSProperties } from "react";
 import type { WavesUser } from "../types/auth";
 import { useThemeControls } from "../hooks/use-system-theme";
+import { isAdmin } from "../lib/message-meta";
 
 interface UserMenuProps {
   user: WavesUser;
@@ -69,6 +71,7 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
   const { mode, toggle } = useThemeControls();
+  const navigate = useNavigate();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -140,6 +143,33 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
             />
           </span>
         </button>
+        {isAdmin() && (
+          <>
+            <div className="user-menu-separator" role="separator" />
+            <button
+              type="button"
+              className="user-menu-item"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                navigate("/admin/architecture");
+              }}
+            >
+              <span className="user-menu-item-label">Architecture Explorer</span>
+            </button>
+            <button
+              type="button"
+              className="user-menu-item"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                navigate("/admin/soc");
+              }}
+            >
+              <span className="user-menu-item-label">SOC Dashboard</span>
+            </button>
+          </>
+        )}
         <div className="user-menu-separator" role="separator" />
         <button
           type="button"
