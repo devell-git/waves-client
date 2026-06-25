@@ -6,6 +6,7 @@ import {
   type SearchHit,
 } from "../api/threads";
 import { sanitizeHtml } from "../lib/sanitize-html";
+import { useBusyThreads } from "../lib/active-runs";
 
 interface SidebarThreadHistoryProps {
   profileId: string;
@@ -64,6 +65,8 @@ export function SidebarThreadHistory({
   const updateThreadAction = useThreadList((s) => s.updateThread);
   const isLoading = useThreadList((s) => s.isLoadingThreads);
   const setMessages = useThread((s) => s.setMessages);
+  const cancelMessage = useThread((s) => s.cancelMessage);
+  const busyThreads = useBusyThreads();
 
   // Garante que a lista carregue ao montar (a sidebar é a única consumidora).
   useEffect(() => {
@@ -151,6 +154,7 @@ export function SidebarThreadHistory({
         className="thread-new-btn"
         title="Nova conversa"
         onClick={() => {
+          cancelMessage(); // #828: aborta run em voo p/ não vazar "pensando" no chat novo
           onNewChat();
           setMessages([]); // limpa a UI; novo threadId abre sessão limpa no gateway
         }}
@@ -181,10 +185,11 @@ export function SidebarThreadHistory({
         {displayed.map((item) => {
           const active = shortId(item.id) === activeThreadId;
           const isEditing = editing === item.id;
+          const isBusy = busyThreads.has(shortId(item.id));
           return (
             <div
               key={item.id}
-              className={`thread-item ${active ? "thread-item-active" : ""}`}
+              className={`thread-item ${active ? "thread-item-active" : ""} ${isBusy ? "thread-item-busy" : ""}`}
               onClick={() => !isEditing && onSelectThread(item.id)}
             >
               <div className="thread-item-main">
@@ -221,6 +226,13 @@ export function SidebarThreadHistory({
                   </span>
                 )}
                 <span className="thread-item-meta">{item.meta}</span>
+                {isBusy && (
+                  <span
+                    className="thread-item-busy-dot"
+                    title="Há algo em andamento nesta conversa"
+                    aria-label="Em andamento"
+                  />
+                )}
               </div>
               {!isEditing && (
                 <button

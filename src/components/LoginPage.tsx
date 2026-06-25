@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { loginApi } from "../api/waves-api";
 import { isEnvConfigured } from "../config/env";
 import { createSession, saveSession } from "../lib/session";
+import { takeExpiredReason } from "../lib/session-guard";
 import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import type { AuthSession } from "../types/auth";
 
@@ -25,6 +26,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     return () => {
       alive = false;
     };
+  }, []);
+
+  // #790 — mostra o motivo da última expiração (inatividade / token expirado).
+  useEffect(() => {
+    const reason = takeExpiredReason();
+    if (reason === "inactivity") {
+      setError("Sessão encerrada por inatividade. Entre novamente.");
+    } else if (reason === "expired") {
+      setError("Sua sessão expirou. Entre novamente.");
+    }
   }, []);
 
   // Branding 100% do TENANT (sem fallback hardcoded). Ausente → neutro/branco.

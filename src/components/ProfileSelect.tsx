@@ -82,7 +82,11 @@ export function ProfileSelect({ profiles, activeId, onChange }: ProfileSelectPro
               >
                 <span className="profile-select-option-label">{p.label}</span>
                 {p.description && (
-                  <span className="profile-select-option-desc">{p.description}</span>
+                  // Snippet (2 linhas via CSS line-clamp) + descrição COMPLETA
+                  // no tooltip ao passar o mouse. (#836)
+                  <span className="profile-select-option-desc" title={p.description}>
+                    {p.description}
+                  </span>
                 )}
               </li>
             );

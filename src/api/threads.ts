@@ -7,6 +7,7 @@
  */
 
 import type { Thread, Message } from "@openuidev/react-headless";
+import { primeMessageTime } from "../lib/message-meta";
 
 export interface ThreadSummary {
   id: string;
@@ -151,6 +152,11 @@ export function toOpenUIThread(t: ThreadSummary): Thread {
  */
 export function toOpenUIMessage(m: ThreadMessage): Message | null {
   const id = String(m.id);
+  // #830 — semeia o horário ORIGINAL no cache de exibição. A lib não carrega o
+  // `timestamp` no objeto Message, então no reload MessageMeta chamaria
+  // messageTime(id, undefined) e cairia em Date.now() (= hora atual). Priming
+  // aqui (na hidratação do histórico) garante a hora real de cada mensagem.
+  primeMessageTime(id, m.timestamp);
   switch (m.role) {
     case "user":
       // Submits do form chegam wrapped em <content>...</content><context>...</context>.

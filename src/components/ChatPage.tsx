@@ -52,8 +52,24 @@ import {
   setThreadGateway,
 } from "../api/threads";
 import { JobProgressCard, parseCheckJob, stripJobMarker } from "./JobProgressCard";
+import { ActiveThreadContext } from "../lib/active-thread-context";
+import {
+  setRunningThread,
+  clearRunningThread,
+  markBackgroundRun,
+  clearBackgroundRun,
+  useBackgroundJobWatcher,
+  useBackgroundRunWatcher,
+} from "../lib/active-runs";
+import type { ThreadMessage } from "../api/threads";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
+import {
+  useSessionGuard,
+  setExpiredReason,
+  type ExpireReason,
+} from "../lib/session-guard";
+import { installAuthInterceptor } from "../lib/fetch-interceptor";
 import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import { getKanbanCtx } from "../lib/kanban-context";
 import {
@@ -73,6 +89,7 @@ import {
   setAdminFlag,
   isAdmin,
   messageTime,
+  primeMessageTime,
   fmtTime,
   extractUsage,
 } from "../lib/message-meta";
@@ -607,6 +624,95 @@ function ThreadSelector({ targetThreadId }: { targetThreadId: string }) {
 // devolver no chat o feedback de ações nativas (ex.: "✅ Tarefa criada"),
 // disparado via CustomEvent `waves:chat-append`. Precisa estar DENTRO do
 // ChatProvider (os modais ficam fora e não acessam `appendMessages`).
+// Espelha o `isRunning` (global da lib) no active-runs, capturando a thread
+// ORIGINADORA na borda de subida do run — base pra escopar o "pensando" e o
+// badge por thread (#828). Limpa quando o run termina (inclui o cancel ao
+// trocar/abrir chat).
+function RunTracker({ activeThreadId }: { activeThreadId: string }) {
+  const isRunning = useThread((s) => s.isRunning);
+  const wasRunning = useRef(false);
+  const runOriginRef = useRef<string>("");
+  useEffect(() => {
+    if (isRunning && !wasRunning.current) {
+      setRunningThread(activeThreadId);
+      // #829 — o gateway persiste a resposta mesmo se você navegar; registra o
+      // run em background pra manter o badge na thread e detectar a conclusão.
+      markBackgroundRun(activeThreadId);
+      runOriginRef.current = activeThreadId;
+    } else if (!isRunning && wasRunning.current) {
+      clearRunningThread();
+      // #829 — se terminou e você AINDA está na thread de origem = conclusão em
+      // FOREGROUND (resposta já visível) → limpa o badge na hora. Se você NAVEGOU
+      // (origem ≠ ativa), deixa o bg-run pro watcher detectar a conclusão real.
+      if (runOriginRef.current && runOriginRef.current === activeThreadId) {
+        clearBackgroundRun(runOriginRef.current);
+      }
+      runOriginRef.current = "";
+    }
+    wasRunning.current = isRunning;
+  }, [isRunning, activeThreadId]);
+  return null;
+}
+
+// Vigia em background os check_jobs pendentes e limpa o badge ao terminar (#828).
+function BackgroundJobWatcher() {
+  useBackgroundJobWatcher();
+  return null;
+}
+
+// #804 — ancora o scroll no FIM (última mensagem visível, estilo WhatsApp) ao
+// ABRIR/HIDRATAR uma thread. O scrollVariant="always" da lib dispara o scroll de
+// carga cedo demais (antes do setMessages assíncrono do ThreadRestorer popular o
+// DOM) e trava; aqui ancoramos INSTANTANEAMENTE quando as mensagens chegam, uma
+// vez por abertura de thread. Durante streaming/nova msg quem cuida é o "always".
+function ScrollAnchorOnOpen({ threadKey }: { threadKey: string }) {
+  const messages = useThread((s) => s.messages);
+  const isRunning = useThread((s) => s.isRunning);
+  const anchoredFor = useRef<string>("");
+  useEffect(() => {
+    if (!threadKey || isRunning) return;
+    // Troca de thread limpa as mensagens (setMessages([])) antes de hidratar:
+    // reseta o latch pra re-ancorar quando as novas mensagens chegarem.
+    if (messages.length === 0) {
+      anchoredFor.current = "";
+      return;
+    }
+    if (anchoredFor.current === threadKey) return; // já ancorou esta abertura
+    const el = document.querySelector<HTMLElement>(".openui-shell-thread-scroll-area");
+    if (!el) return;
+    anchoredFor.current = threadKey;
+    // rAF: garante que o layout das mensagens já foi aplicado. Instantâneo (sem animação).
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [messages, threadKey, isRunning]);
+  return null;
+}
+
+// #829 — vigia runs em background (thread deixada rodando ao navegar): quando o
+// gateway termina e persiste a resposta, limpa o badge e, se a thread é a ativa,
+// recarrega as mensagens pra mostrar o resultado sem o usuário ter de recarregar.
+function BackgroundRunWatcher({
+  profileId,
+  threadKeyPrefix,
+  activeThreadId,
+}: {
+  profileId: string;
+  threadKeyPrefix: string;
+  activeThreadId: string;
+}) {
+  const setMessages = useThread((s) => s.setMessages);
+  const onActiveThreadDone = useCallback(
+    (msgs: ThreadMessage[]) => {
+      const conv = msgs.map(toOpenUIMessage).filter(Boolean) as Message[];
+      if (conv.length) setMessages(conv);
+    },
+    [setMessages],
+  );
+  useBackgroundRunWatcher({ profileId, threadKeyPrefix, activeThreadId, onActiveThreadDone });
+  return null;
+}
+
 function ChatAppendListener() {
   const appendMessages = useThread((s) => s.appendMessages);
   useEffect(() => {
@@ -834,9 +940,13 @@ function ThreadRestorer({
       });
       for (const s of loadShortcuts(fullThreadKey)) {
         if (gwContents.has(s.content)) continue;
+        const scId = `sc-${s.ts}-${s.role}`;
+        // #830 — atalhos não passam por toOpenUIMessage; semeia o horário real
+        // pra não cair em Date.now() no reload.
+        primeMessageTime(scId, s.ts);
         items.push({
           ts: s.ts,
-          msg: { id: `sc-${s.ts}-${s.role}`, role: s.role, content: s.content } as Message,
+          msg: { id: scId, role: s.role, content: s.content } as Message,
         });
       }
       if (cancelled || items.length === 0) return;
@@ -914,7 +1024,10 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
         .map((a) => ({
           id: a.profile_name ?? String(a.id),
           label: a.name ?? a.page_title ?? a.profile_name ?? String(a.id),
-          description: `${a.profile_name ?? ""}${a.port ? ` · :${a.port}` : ""}`,
+          // Descrição REAL do assistente (cadastro Waves) — não o nome+porta
+          // técnico. Snippet + tooltip completo no ProfileSelect. SEM fallback:
+          // sem description, fica só o nome (o label) — sem 2ª linha. (#836)
+          description: a.description?.trim() || "",
           port: a.port,
         })),
     [session.agents],
@@ -1281,10 +1394,39 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     onLogout();
   }, [onLogout]);
 
+  // #790 Fase 1 — encerra a sessão registrando o MOTIVO (mostrado na LoginPage).
+  const handleExpire = useCallback(
+    (reason: ExpireReason) => {
+      setExpiredReason(reason);
+      handleSessionExpired();
+    },
+    [handleSessionExpired],
+  );
+
+  // #790 — guarda inatividade (30min) + expiração absoluta + aviso ~5min antes.
+  const { showWarning, dismissWarning } = useSessionGuard({
+    expiresAt: session.expiresAt,
+    onExpire: handleExpire,
+  });
+
+  // #790 — 401/403 em qualquer chamada /api/* → sessão expirou → logout + login.
+  useEffect(() => installAuthInterceptor(() => handleExpire("expired")), [handleExpire]);
+
   const fullThreadKey = `${threadKeyPrefix}${activeThreadId}`;
 
   return (
     <div className="chat-shell">
+      {showWarning && (
+        <div className="session-warning" role="alert">
+          <span>
+            ⚠️ Sua sessão vai expirar em alguns minutos. Salve seu trabalho — você
+            precisará entrar novamente.
+          </span>
+          <button type="button" onClick={dismissWarning} aria-label="Dispensar aviso">
+            ✕
+          </button>
+        </div>
+      )}
       <header className="chat-shell-header">
         <button
           type="button"
@@ -1357,6 +1499,14 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
             <ThreadSelector targetThreadId={activeThreadId} />
             <ThreadRestorer profileId={activeProfile} fullThreadKey={fullThreadKey} />
             <ChatAppendListener />
+            <RunTracker activeThreadId={activeThreadId} />
+            <ScrollAnchorOnOpen threadKey={fullThreadKey} />
+            <BackgroundJobWatcher />
+            <BackgroundRunWatcher
+              profileId={activeProfile}
+              threadKeyPrefix={threadKeyPrefix}
+              activeThreadId={activeThreadId}
+            />
             <ShareFileDialog profile={activeProfile} userId={String(session.user.id)} />
             <NotificationBell profile={activeProfile} userId={String(session.user.id)} />
             <FilePreviewer profile={activeProfile} />
@@ -1367,6 +1517,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                 aria-hidden="true"
               />
             )}
+            <ActiveThreadContext.Provider value={activeThreadId}>
             <Shell.Container
               logoUrl={(mode === "dark" ? branding?.logo_white : branding?.logo_dark) ?? ""}
               agentName="Agent"
@@ -1388,7 +1539,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                   title={activeAgent?.page_title}
                   subtitle={activeAgent?.page_subtitle}
                 />
-                <Shell.ScrollArea>
+                <Shell.ScrollArea scrollVariant="always">
                   <Shell.Messages
                     loader={<ThinkingIndicator />}
                     assistantMessage={GenUIAssistantMessage}
@@ -1411,6 +1562,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                 />
               </Shell.ThreadContainer>
             </Shell.Container>
+            </ActiveThreadContext.Provider>
           </ChatProvider>
         </ThemeProvider>
       </div>

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { buildExecutiveUpdateHtml, type ExecTask } from "../../report-html";
 import { sanitizeHtml } from "../../sanitize-html";
 import { rawJson, useWavesDoc, DocTypePicker } from "../waves-doc";
+import { InlineJobProgress } from "./inline-job-progress";
 import { loadSession } from "../../session";
 import { getActiveGateway } from "../../../api/threads";
 
@@ -200,14 +201,7 @@ export const GenerateExecutiveUpdate = defineComponent({
     }, []);
 
     if (stage === "loading") {
-      return (
-        <span className="waves-file-download-wrap">
-          <span className="waves-file-download">
-            <Loader2 size={18} className="waves-file-download__spin" />
-            <span className="waves-file-download__name">{loadingMsg}</span>
-          </span>
-        </span>
-      );
+      return <InlineJobProgress label={loadingMsg} />;
     }
     if (stage === "error") {
       return (

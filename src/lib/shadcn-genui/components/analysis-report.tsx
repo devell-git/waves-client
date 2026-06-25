@@ -7,6 +7,7 @@ import { sanitizeHtml } from "../../sanitize-html";
 import { rawJson, useWavesDoc } from "../waves-doc";
 import { loadSession } from "../../session";
 import { getCachedReport, putCachedReport } from "../../report-cache";
+import { InlineJobProgress } from "./inline-job-progress";
 import { getActiveGateway } from "../../../api/threads";
 import { getWorkflowList, loadWorkflowTasksFull } from "../../openui-tools";
 
@@ -216,14 +217,7 @@ export function AnalysisReport({
   }, []);
 
   if (stage === "loading") {
-    return (
-      <span className="waves-file-download-wrap">
-        <span className="waves-file-download">
-          <Loader2 size={18} className="waves-file-download__spin" />
-          <span className="waves-file-download__name">Gerando análise (IA)… pode levar alguns segundos</span>
-        </span>
-      </span>
-    );
+    return <InlineJobProgress label="Gerando análise (IA)…" />;
   }
   if (stage === "error") {
     return (

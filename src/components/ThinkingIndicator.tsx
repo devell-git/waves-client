@@ -18,6 +18,8 @@
 
 import { useEffect, useState } from "react";
 import { useThread } from "@openuidev/react-headless";
+import { useActiveThreadId } from "../lib/active-thread-context";
+import { useRunningThreadId } from "../lib/active-runs";
 
 interface ToolProgress {
   tool: string;
@@ -35,6 +37,8 @@ const MAX_BACKOFF_MS = 10_000;
 
 export function ThinkingIndicator() {
   const isRunning = useThread((s) => s.isRunning);
+  const viewedThread = useActiveThreadId();
+  const runningThread = useRunningThreadId();
   const [progress, setProgress] = useState<ToolProgress | null>(null);
 
   useEffect(() => {
@@ -80,6 +84,10 @@ export function ThinkingIndicator() {
       abortController?.abort();
     };
   }, [isRunning]);
+
+  // ESCOPO POR THREAD (#828): se o run em voo pertence a OUTRA thread, não
+  // mostra o "pensando" aqui — senão vaza pro chat que o usuário abriu.
+  if (runningThread && runningThread !== viewedThread) return null;
 
   // Mensagem em linguagem natural — vem do backend já humanizada
   // ("Buscando os Action Plans…"). Se não tiver, fallback pra "Thinking".

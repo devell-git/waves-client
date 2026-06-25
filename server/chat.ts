@@ -108,7 +108,14 @@ export function resolveHermesGateway(
   return { ok: true, baseURL };
 }
 import { clearProgress, setProgress } from "./tool-progress.js";
-import { consultToolToProfile, getLatestJob } from "./specialist-jobs.js";
+import {
+  backendForPort,
+  consultToolToProfile,
+  getLatestJob,
+  isConsultTool,
+  rememberJobBackend,
+} from "./specialist-jobs.js";
+import { recordJobAnchor } from "./specialist-job-anchors.js";
 
 /**
  * Schemas das tools (sem function executor) — usado pelo Codex (Responses API).
@@ -650,6 +657,14 @@ function imageToDataUri(a: AttachmentPayload): string | null {
  * Quando há imagem, o conteúdo da mensagem passa a ser um array multimodal
  * `[{type:"text"}, {type:"image_url"}, …]` no formato OpenAI Chat Completions.
  */
+// #824 — base pública do waves_client pra montar URL ABSOLUTA do anexo (retrieval
+// cross-host: o lab-worker em OUTRO host fetcha a URL assinada). Se vazio, cai na
+// URL relativa (o consumidor prefixa com o host do waves_client do mesmo tenant).
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL ?? "").replace(/\/+$/, "");
+function fileRef(a: AttachmentPayload): string {
+  return `${PUBLIC_BASE_URL}${a.url}`;
+}
+
 function injectAttachments(
   messages: unknown[],
   attachments: AttachmentPayload[],
@@ -677,14 +692,17 @@ function injectAttachments(
         imageParts.push({ type: "image_url", image_url: { url: dataUri } });
         blocks.push(`${head} — imagem anexada (conteúdo visual incluído abaixo).`);
       } else {
-        blocks.push(`${head} — imagem; não foi possível anexar o conteúdo visual. Disponível em ${a.url}.`);
+        blocks.push(`${head} — imagem; não foi possível anexar o conteúdo visual. Recuperável (URL assinada, escopo do dono): ${fileRef(a)}`);
       }
       blocks.push("");
     } else if (a.error) {
-      blocks.push(`${head} — não foi possível extrair texto (${a.error}). Arquivo salvo em ${a.path}.`);
+      blocks.push(`${head} — não foi possível extrair texto (${a.error}). Arquivo recuperável (qualquer host, URL assinada, escopo do dono): ${fileRef(a)}`);
       blocks.push("");
     } else {
-      blocks.push(`${head} — sem texto extraível. Arquivo salvo em ${a.path}.`);
+      // #824 — sem conteúdo legível (vídeo/áudio/binário): NÃO injeta o caminho
+      // LOCAL (inútil cross-host). Injeta a URL ASSINADA — fetchável por HTTP de
+      // qualquer host (lab-worker em outro servidor) e escopada por owner via sig.
+      blocks.push(`${head} — sem texto extraível. Arquivo recuperável (qualquer host, URL assinada, escopo do dono): ${fileRef(a)}`);
       blocks.push("");
     }
   }
@@ -1645,6 +1663,18 @@ async function handleChatRequestHermes(
       // stream, então detectamos a chamada aqui e buscamos o job_id no .db pra
       // injetar o `check_job` (card "Vigia analisando…") de forma determinística.
       const consultToolsSeen = new Set<string>();
+      // Backend de specialist do assistente ATUAL — resolvido pela PORTA do
+      // gateway (extraída do baseURL, ex.: http://127.0.0.1:18877 → 18877).
+      // Define qual rendered_api consultar/rotear e como mapear tool → profile.
+      // Porta desconhecida/ausente → backend default (Steve).
+      let gatewayPort: number | undefined;
+      try {
+        const pStr = new URL(baseURL ?? "").port;
+        gatewayPort = pStr ? Number(pStr) : undefined;
+      } catch {
+        gatewayPort = undefined;
+      }
+      const specialistBackend = backendForPort(gatewayPort);
       // Acumula tokens da geração (somados entre turnos do loop).
       let usagePrompt = 0;
       let usageCompletion = 0;
@@ -1750,7 +1780,7 @@ async function handleChatRequestHermes(
                         toolCallId: p.toolCallId,
                         status: p.status === "completed" ? "completed" : "running",
                       });
-                      if (/consult_/i.test(p.tool)) consultToolsSeen.add(p.tool);
+                      if (isConsultTool(p.tool, specialistBackend)) consultToolsSeen.add(p.tool);
                     }
                   } catch {
                     // payload inválido — ignora
@@ -1987,9 +2017,19 @@ async function handleChatRequestHermes(
           // o JobProgressCard monta sozinho (animação "analisando…" + auto-render
           // quando o sub-agent volta). Determinístico, sem depender do LLM.
           for (const tool of consultToolsSeen) {
-            const profile = consultToolToProfile(tool);
-            const job = profile ? await getLatestJob(profile) : null;
+            const profile = consultToolToProfile(tool, specialistBackend);
+            const job = profile ? await getLatestJob(profile, specialistBackend) : null;
             if (job) {
+              // Registra qual rendered_api tem esse job, pra o proxy
+              // `/api/specialist-jobs/:id/rendered` rotear certo (o front polla
+              // só com o job_id, sem saber o backend).
+              rememberJobBackend(job.jobId, specialistBackend.renderedUrl);
+              // Ancora o job na thread (server-side) pra o card SOBREVIVER ao
+              // reload: o thread-history re-injeta o marcador no histórico. O
+              // marcador injetado aqui no stream NÃO entra no state.db do gateway.
+              // Chave = `sessionId` COMPLETO (waves-<tenant>-user-<id>::<thread>),
+              // idêntico ao `threadId` que o thread-history recebe na leitura.
+              recordJobAnchor(sessionId, job.jobId);
               enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
@@ -2001,7 +2041,9 @@ async function handleChatRequestHermes(
                   })}\n\n`,
                 ),
               );
-              console.log(`[chat:specialist] ${tool} → job ${job.jobId} (check_job injetado)`);
+              console.log(
+                `[chat:specialist] ${tool} → job ${job.jobId} @ ${specialistBackend.renderedUrl} (check_job injetado)`,
+              );
               break; // 1 card por request (parseCheckJob pega o 1º marcador)
             }
           }

@@ -76,6 +76,7 @@ export function ThreadErrorRecovery({
   const pingInFlightRef = useRef(false);
   const retryTimerRef = useRef<number | null>(null);
   const errorKeyRef = useRef("");
+  const resumeAttemptedRef = useRef(""); // #831 — resume-on-mount: 1x por thread
 
   const threadErrorRef = useRef(threadError);
   threadErrorRef.current = threadError;
@@ -269,6 +270,29 @@ export function ThreadErrorRecovery({
     retryTimerRef.current = window.setInterval(tick, SERVER_PING_INTERVAL_MS);
     return () => clearRetryTimer();
   }, [threadError, bannerDismissed, clearRetryTimer]);
+
+  // #831 — RESUME-ON-MOUNT: num RELOAD não há `threadError`, então o recover
+  // normal (gated em erro de rede) NÃO dispara e a resposta em voo se perde.
+  // Aqui, ao hidratar a thread: se a última msg é do user SEM resposta e há uma
+  // requisição pendente salva (sessionStorage), retoma UMA vez (reusa o
+  // `runRecover`, que decide reenviar vs recarregar do servidor). Se a conversa
+  // já terminou (última = assistant), limpa a pendência latente — o fluxo normal
+  // nunca a limpava, e sem isso o resume re-rodaria a cada reload.
+  useEffect(() => {
+    if (isRunning) return;
+    if (messages.length === 0) return; // ainda hidratando
+    const pending = loadPendingChatRequest(fullThreadKey);
+    if (!pending) return;
+    const last = messages[messages.length - 1];
+    if (last?.role === "assistant") {
+      clearPendingChatRequest(fullThreadKey);
+      return;
+    }
+    if (last?.role !== "user") return;
+    if (resumeAttemptedRef.current === fullThreadKey) return;
+    resumeAttemptedRef.current = fullThreadKey;
+    void runRecoverRef.current();
+  }, [messages, isRunning, fullThreadKey]);
 
   const showBanner = Boolean(
     threadError && isNetworkError && !bannerDismissed && !isRunning,

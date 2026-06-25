@@ -12,6 +12,8 @@
  * ativo (mesma regra do código antigo, agora aplicada sobre o JSON do gateway).
  */
 
+import { jobAnchorsForThread } from "./specialist-job-anchors.js";
+
 const FETCH_TIMEOUT_MS = 15_000;
 
 /** Contexto pra falar com o gateway de um profile (montado na rota Express). */
@@ -123,7 +125,7 @@ export async function getThreadMessages(
   if (r.status === 404) return [];
   if (!r.ok) throw new Error(`gateway GET messages → ${r.status}`);
   const j = (await r.json()) as { data?: GwMessage[] };
-  return (j.data ?? []).map((m) => ({
+  const msgs: ThreadMessage[] = (j.data ?? []).map((m) => ({
     id: typeof m.id === "number" ? m.id : Number(m.id) || 0,
     role: String(m.role ?? ""),
     content: m.content ?? "",
@@ -132,6 +134,32 @@ export async function getThreadMessages(
     toolCallId: m.tool_call_id ?? null,
     timestamp: toMs(m.timestamp),
   }));
+
+  // Re-injeta os cards de specialist (`check_job`) ancorados no server, pra
+  // SOBREVIVEREM ao reload — o marcador é injetado no stream pelo chat.ts e NÃO
+  // entra no histórico do gateway. Dedup vs mensagens que já contêm o jobId (ex.:
+  // o agente emitiu em prosa). O JobProgressCard re-polla e serve o cache.
+  for (const a of jobAnchorsForThread(threadId)) {
+    // Dedup: só pula se um ASSISTANT já tem o marcador `check_job` DESTE job (ex.:
+    // o agente emitiu em prosa → já renderiza o card). NÃO conta o `tool_result`
+    // do consult (role "tool"), que CONTÉM o jobId mas NÃO vira card — era o que
+    // fazia o card sumir no reload (dedup pulava a injeção).
+    const marker = new RegExp(`(?:check_job|job_id)\\s*[:=]\\s*\\\\?["']?${a.jobId}`, "i");
+    const renderedAlready = msgs.some(
+      (m) => m.role === "assistant" && typeof m.content === "string" && marker.test(m.content),
+    );
+    if (renderedAlready) continue;
+    msgs.push({
+      id: a.ts, // id numérico estável por job (ts de registro)
+      role: "assistant",
+      content: `check_job: "${a.jobId}"`,
+      toolCalls: null,
+      toolName: null,
+      toolCallId: null,
+      timestamp: a.ts,
+    });
+  }
+  return msgs;
 }
 
 /**

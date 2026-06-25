@@ -25,6 +25,20 @@ export function messageTime(id: string | undefined, tsFromMsg?: number): number 
   }
   return t;
 }
+
+/**
+ * Fixa o horário ORIGINAL de uma mensagem no cache, pela hidratação do histórico.
+ * #830 — no reload o histórico é re-hidratado e o `seen` está vazio; sem isto,
+ * `messageTime` cairia no fallback `Date.now()` (= hora atual) e TODAS as
+ * mensagens passariam a exibir a hora do reload. Aqui semeamos o `seen` com o
+ * timestamp real (mesmo cache do caminho "ao vivo"). Só grava ts válido.
+ */
+export function primeMessageTime(id: string | undefined, ts?: number): void {
+  if (!id || typeof ts !== "number" || ts <= 0) return;
+  // Aceita ts em segundos (epoch) OU milissegundos: < 1e12 (~ano 2001 em ms)
+  // é tratado como segundos e convertido. fmtTime espera ms.
+  seen.set(id, ts < 1e12 ? ts * 1000 : ts);
+}
 export function fmtTime(ms: number): string {
   const d = new Date(ms);
   const h = String(d.getHours()).padStart(2, "0");
