@@ -164,6 +164,8 @@ function Timeline({
             tool_call: { tag: "CALL", label: "Tool" },
             tool_result: { tag: "RESP", label: "Tool" },
             tool_error: { tag: "ERRO", label: "Tool" },
+            delegation: { tag: "DELEG", label: "Sub-agente" },
+            delegation_return: { tag: "VOLTA", label: "Sub-agente" },
             user_msg: { tag: "USR", label: "Usuário" },
             assistant_msg: { tag: "BOT", label: "Agente" },
           };
@@ -183,6 +185,9 @@ function Timeline({
               <span className="soc-event-label">{m.label}</span>
               <span className="soc-event-profile">{ev.profile}</span>
               <span className="soc-event-tool">{ev.tool}</span>
+              {ev.target_profile && (
+                <span className="soc-event-target">→ {ev.target_profile}</span>
+              )}
               {ev.detail && (
                 <details className="soc-event-detail">
                   <summary>detalhes</summary>

@@ -6,9 +6,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 export interface ActivityEvent {
   ts: string;
   profile: string;
-  event: "tool_call" | "tool_result" | "tool_error" | "user_msg" | "assistant_msg";
+  event: "tool_call" | "tool_result" | "tool_error" | "user_msg" | "assistant_msg" | "delegation" | "delegation_return";
   tool: string; // tool name for tool_call/result, message preview for user/assistant_msg
   detail?: string; // tool arguments (tool_call), tool output (tool_result), or empty
+  target_profile?: string; // for delegation: which sub-agent was called
+  job_id?: string; // for delegation_return: specialist job ID
   session_id?: number;
   user_id?: string;
   source?: string;
