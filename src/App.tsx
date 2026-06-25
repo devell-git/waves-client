@@ -3,7 +3,10 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { verifyApiSession } from "./api/waves-api";
 import { ChatPage } from "./components/ChatPage";
 import { LoginPage } from "./components/LoginPage";
+import { ArchitectureExplorer } from "./components/architecture/ArchitectureExplorer";
+import { SOCDashboard } from "./components/soc/SOCDashboard";
 import { clearSession, loadSession, saveSession } from "./lib/session";
+import { isAdminUser } from "./lib/permissions";
 import { fetchTenantBranding } from "./lib/tenant";
 import type { AuthSession } from "./types/auth";
 
@@ -118,6 +121,26 @@ export default function App() {
             <ChatPage session={session} onLogout={handleLogout} />
           ) : (
             <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/architecture"
+        element={
+          session && isAdminUser(session.roles, session.user.type) ? (
+            <ArchitectureExplorer session={session} />
+          ) : (
+            <Navigate to={session ? "/chat" : "/login"} replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/soc"
+        element={
+          session && isAdminUser(session.roles, session.user.type) ? (
+            <SOCDashboard session={session} />
+          ) : (
+            <Navigate to={session ? "/chat" : "/login"} replace />
           )
         }
       />
