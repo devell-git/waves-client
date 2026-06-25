@@ -163,6 +163,7 @@ function Timeline({
           const meta: Record<string, { tag: string; label: string }> = {
             tool_call: { tag: "CALL", label: "Tool" },
             tool_result: { tag: "RESP", label: "Tool" },
+            tool_error: { tag: "ERRO", label: "Tool" },
             user_msg: { tag: "USR", label: "Usuário" },
             assistant_msg: { tag: "BOT", label: "Agente" },
           };
@@ -346,7 +347,7 @@ function SOCInner({ session }: { session: AuthSession }) {
 
   // KPIs
   const callsRecent = allEvents.length;
-  const errorsRecent = 0; // TODO: derive from circuit breakers
+  const errorsRecent = allEvents.filter((e) => e.event === "tool_error").length;
 
   return (
     <div className="soc-dashboard">

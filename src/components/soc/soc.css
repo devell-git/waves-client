@@ -218,6 +218,7 @@
 }
 .soc-event-badge--tool_call { background: #1e3a5f; color: #60a5fa; }
 .soc-event-badge--tool_result { background: #14532d; color: #4ade80; }
+.soc-event-badge--tool_error { background: #7f1d1d; color: #f87171; font-weight: 800; }
 .soc-event-badge--user_msg { background: #422006; color: #fbbf24; }
 .soc-event-badge--assistant_msg { background: #2e1065; color: #c4b5fd; }
 .soc-event-label {
