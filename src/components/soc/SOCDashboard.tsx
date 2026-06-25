@@ -169,10 +169,10 @@ function Timeline({
               })}
             </span>
             <span
-              className={`soc-event-dot ${ev.event === "tool_call" ? "soc-event-dot--call" : "soc-event-dot--result"}`}
+              className={`soc-event-dot soc-event-dot--${ev.event}`}
               title={ev.event}
             >
-              {ev.event === "tool_call" ? "→" : "←"}
+              {ev.event === "tool_call" ? "→" : ev.event === "tool_result" ? "←" : ev.event === "user_msg" ? "💬" : "🤖"}
             </span>
             <span className="soc-event-profile">{ev.profile}</span>
             <span className="soc-event-tool">{ev.tool}</span>

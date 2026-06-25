@@ -205,8 +205,10 @@
   width: 14px;
   text-align: center;
 }
-.soc-event-dot--call { color: #3b82f6; }
-.soc-event-dot--result { color: #22c55e; }
+.soc-event-dot--tool_call { color: #3b82f6; }
+.soc-event-dot--tool_result { color: #22c55e; }
+.soc-event-dot--user_msg { color: #f59e0b; }
+.soc-event-dot--assistant_msg { color: #a78bfa; }
 .soc-event-profile {
   color: #a1a1aa;
   font-size: 0.72rem;
