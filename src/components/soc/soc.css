@@ -342,6 +342,59 @@
   .soc-tool-name { width: 120px; }
 }
 
+/* Heartbeat — processing indicator */
+@keyframes soc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes soc-dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.6); }
+  50% { box-shadow: 0 0 0 4px rgba(251, 191, 36, 0); }
+}
+.soc-heartbeat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: linear-gradient(90deg, #1a1507 0%, #0a0a12 100%);
+  border-bottom: 1px solid #2a2008;
+  animation: soc-pulse 2s ease-in-out infinite;
+}
+.soc-heartbeat-pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: soc-dot-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.soc-heartbeat-profile {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fbbf24;
+}
+.soc-heartbeat-label {
+  font-size: 0.65rem;
+  color: #92702a;
+  font-style: italic;
+}
+.soc-heartbeat-count {
+  font-size: 0.55rem;
+  background: #422006;
+  color: #fbbf24;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+/* Agent processing state */
+.soc-agent--processing {
+  background: #1a1507 !important;
+}
+.soc-agent-dot--processing {
+  background: #fbbf24 !important;
+  animation: soc-dot-pulse 1.5s ease-in-out infinite;
+}
+
 /* Event detail (expandable) */
 .soc-event-detail {
   width: 100%;

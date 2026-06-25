@@ -18,15 +18,21 @@ const queryClient = new QueryClient({
   },
 });
 
+interface ActivitySnapshot {
+  events: Record<string, ActivityEvent[]>;
+  processing: Record<string, string>; // profile → since timestamp
+}
+
 /** Busca snapshot de activity (últimas N calls por profile). */
-async function fetchActivity(token: string): Promise<Record<string, ActivityEvent[]>> {
+async function fetchActivity(token: string): Promise<ActivitySnapshot> {
   const res = await fetch("/api/architecture/activity?refresh=1", {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return {};
+  if (!res.ok) return { events: {}, processing: {} };
   const data = await res.json();
-  const { _updated, ...profiles } = data;
-  return profiles as Record<string, ActivityEvent[]>;
+  const processing = (data._processing ?? {}) as Record<string, string>;
+  const { _updated, _processing, ...profiles } = data;
+  return { events: profiles as Record<string, ActivityEvent[]>, processing };
 }
 
 // ─── KPI Bar ──────────────────────────────────────────────────────────────
@@ -72,22 +78,27 @@ function AgentList({
   recentCalls,
   selectedProfile,
   onSelect,
+  processingProfiles,
 }: {
   profiles: string[];
   activeProfiles: Set<string>;
   recentCalls: Map<string, ActivityEvent[]>;
   selectedProfile: string | null;
   onSelect: (p: string | null) => void;
+  processingProfiles: Record<string, string>;
 }) {
-  // Sort: active first, then alphabetical
+  // Sort: processing first, then active, then alphabetical
   const sorted = useMemo(() => {
     return [...profiles].sort((a, b) => {
+      const aProc = a in processingProfiles ? 0 : 1;
+      const bProc = b in processingProfiles ? 0 : 1;
+      if (aProc !== bProc) return aProc - bProc;
       const aActive = activeProfiles.has(`profile:${a}`) ? 0 : 1;
       const bActive = activeProfiles.has(`profile:${b}`) ? 0 : 1;
       if (aActive !== bActive) return aActive - bActive;
       return a.localeCompare(b, "pt-BR");
     });
-  }, [profiles, activeProfiles]);
+  }, [profiles, activeProfiles, processingProfiles]);
 
   return (
     <div className="soc-agents">
@@ -105,6 +116,7 @@ function AgentList({
       <ul className="soc-agent-list">
         {sorted.map((p) => {
           const isActive = activeProfiles.has(`profile:${p}`);
+          const isProcessing = p in processingProfiles;
           const calls = recentCalls.get(`profile:${p}`) ?? [];
           const lastCall = calls.length > 0 ? calls[calls.length - 1] : null;
           const isSelected = selectedProfile === p;
@@ -112,12 +124,12 @@ function AgentList({
             <li key={p}>
               <button
                 type="button"
-                className={`soc-agent${isSelected ? " soc-agent--selected" : ""}`}
+                className={`soc-agent${isSelected ? " soc-agent--selected" : ""}${isProcessing ? " soc-agent--processing" : ""}`}
                 onClick={() => onSelect(isSelected ? null : p)}
               >
                 <span
-                  className={`soc-agent-dot ${isActive ? "soc-agent-dot--active" : ""}`}
-                  aria-label={isActive ? "ativo" : "idle"}
+                  className={`soc-agent-dot ${isProcessing ? "soc-agent-dot--processing" : isActive ? "soc-agent-dot--active" : ""}`}
+                  aria-label={isProcessing ? "processando" : isActive ? "ativo" : "idle"}
                 />
                 <span className="soc-agent-name">{p}</span>
                 {lastCall && (
@@ -141,22 +153,39 @@ function AgentList({
 function Timeline({
   events,
   selectedProfile,
+  processingProfiles,
 }: {
   events: ActivityEvent[];
   selectedProfile: string | null;
+  processingProfiles: Record<string, string>;
 }) {
   const filtered = selectedProfile
     ? events.filter((e) => e.profile === selectedProfile)
     : events;
   const display = filtered.slice(-50).reverse();
 
+  // Heartbeat lines for processing profiles
+  const heartbeats = selectedProfile
+    ? selectedProfile in processingProfiles ? [selectedProfile] : []
+    : Object.keys(processingProfiles);
+
   return (
     <div className="soc-timeline">
       <h3 className="soc-section-title">
         Timeline {selectedProfile ? `— ${selectedProfile}` : "— todos"}
+        {heartbeats.length > 0 && (
+          <span className="soc-heartbeat-count">{heartbeats.length} processando</span>
+        )}
       </h3>
       <div className="soc-timeline-feed">
-        {display.length === 0 && (
+        {heartbeats.map((p) => (
+          <div key={`hb-${p}`} className="soc-heartbeat">
+            <span className="soc-heartbeat-pulse" />
+            <span className="soc-heartbeat-profile">{p}</span>
+            <span className="soc-heartbeat-label">processando…</span>
+          </div>
+        ))}
+        {display.length === 0 && heartbeats.length === 0 && (
           <p className="soc-empty">Aguardando eventos…</p>
         )}
         {display.map((ev, i) => {
@@ -294,18 +323,33 @@ function SOCInner({ session }: { session: AuthSession }) {
     true,
   );
 
+  // Processing profiles (heartbeat)
+  const [processingProfiles, setProcessingProfiles] = useState<Record<string, string>>({});
+
   // Merge initial activity with SSE events
   const [allEvents, setAllEvents] = useState<ActivityEvent[]>([]);
   useEffect(() => {
     if (initialActivity) {
       const events: ActivityEvent[] = [];
-      for (const calls of Object.values(initialActivity)) {
+      for (const calls of Object.values(initialActivity.events)) {
         events.push(...calls);
       }
       events.sort((a, b) => a.ts.localeCompare(b.ts));
       setAllEvents(events);
+      setProcessingProfiles(initialActivity.processing);
     }
   }, [initialActivity]);
+
+  // Poll processing state every 10s
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const snap = await fetchActivity(session.accessToken);
+        setProcessingProfiles(snap.processing);
+      } catch { /* ignore */ }
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, [session.accessToken]);
 
   // Append SSE events
   useEffect(() => {
@@ -385,10 +429,11 @@ function SOCInner({ session }: { session: AuthSession }) {
           recentCalls={recentCalls}
           selectedProfile={selectedProfile}
           onSelect={setSelectedProfile}
+          processingProfiles={processingProfiles}
         />
 
         <div className="soc-main">
-          <Timeline events={allEvents} selectedProfile={selectedProfile} />
+          <Timeline events={allEvents} selectedProfile={selectedProfile} processingProfiles={processingProfiles} />
 
           {selectedProfile && (
             <AgentDetail
