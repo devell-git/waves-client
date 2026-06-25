@@ -351,7 +351,7 @@ function SOCInner({ session }: { session: AuthSession }) {
     return () => clearInterval(interval);
   }, [session.accessToken]);
 
-  // Append SSE events
+  // Append SSE events + update processing state from SSE
   useEffect(() => {
     if (recentCalls.size === 0) return;
     const newEvents: ActivityEvent[] = [];
@@ -359,6 +359,19 @@ function SOCInner({ session }: { session: AuthSession }) {
       newEvents.push(...calls);
     }
     if (newEvents.length > 0) {
+      // Update processing state from SSE events
+      setProcessingProfiles((prev) => {
+        const next = { ...prev };
+        for (const ev of newEvents) {
+          if (ev.event === "processing_start") {
+            next[ev.profile] = ev.ts;
+          } else if (ev.event === "processing_end") {
+            delete next[ev.profile];
+          }
+        }
+        return next;
+      });
+
       setAllEvents((prev) => {
         const merged = [...prev, ...newEvents];
         // Dedup by ts+tool+profile
