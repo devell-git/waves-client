@@ -1,0 +1,23 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 45.79.137.141
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /var/www/html/waves-client
+            git pull origin master 2>&1
+            # post-merge hook executa automaticamente:
+            # - npm install (se deps mudaram)
+            # - npm run build
+            # - restart waves-client.service
