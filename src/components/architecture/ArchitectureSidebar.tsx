@@ -20,6 +20,7 @@ const EDGE_LABEL: Record<string, string> = {
   uses: "usa skill",
   loads: "carrega plugin",
   runs: "roda",
+  delegates_to: "delega a",
 };
 
 function fmtValue(v: unknown): string {
@@ -146,6 +147,37 @@ export function ArchitectureSidebar({ node, graph, onClose, onSelect, recentCall
               ))}
             </ul>
           </details>
+        </div>
+      )}
+
+      {/* Sub-agentes (delegates_to) */}
+      {Array.isArray(data.sub_agents) && data.sub_agents.length > 0 && (
+        <div className="arch-sidebar-section">
+          <h3>Delega a ({(data.sub_agents as string[]).length} sub-agentes)</h3>
+          <ul className="arch-sidebar-list">
+            {(data.sub_agents as string[]).map((agent) => {
+              const agentNode = graph.nodes.find((n) => n.label === agent);
+              const agentEdges = agentNode
+                ? graph.edges.filter((e) => e.source === agentNode.id)
+                : [];
+              const mcpCount = agentEdges.filter((e) => e.type === "mounts").length;
+              const skillCount = agentEdges.filter((e) => e.type === "uses").length;
+              return (
+                <li key={agent}>
+                  <button
+                    type="button"
+                    className="arch-rel"
+                    onClick={() => onSelect(agentNode?.id ?? "")}
+                    title={`Ver ${agent}`}
+                  >
+                    <span className="arch-rel-dot" style={{ background: ARCH_TYPE_COLOR.profile }} />
+                    <span className="arch-rel-label">{agent}</span>
+                    <span className="arch-rel-type">{mcpCount} MCPs · {skillCount} skills</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
