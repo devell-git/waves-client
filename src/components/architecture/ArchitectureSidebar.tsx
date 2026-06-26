@@ -89,13 +89,47 @@ export function ArchitectureSidebar({ node, graph, onClose, onSelect, recentCall
         <div className="arch-sidebar-section">
           <h3>Detalhes</h3>
           <dl className="arch-sidebar-data">
-            {dataEntries.map(([k, v]) => (
-              <div key={k} className="arch-sidebar-datarow">
-                <dt>{k}</dt>
-                <dd>{fmtValue(v)}</dd>
-              </div>
-            ))}
+            {dataEntries
+              .filter(([k]) => !["tools", "sub_skills"].includes(k))
+              .map(([k, v]) => (
+                <div key={k} className="arch-sidebar-datarow">
+                  <dt>{k}</dt>
+                  <dd>{fmtValue(v)}</dd>
+                </div>
+              ))}
           </dl>
+        </div>
+      )}
+
+      {/* MCP Tools (expandível) */}
+      {Array.isArray(data.tools) && data.tools.length > 0 && (
+        <div className="arch-sidebar-section">
+          <details>
+            <summary className="arch-sidebar-expandable">
+              <h3>Tools ({(data.tools as string[]).length})</h3>
+            </summary>
+            <ul className="arch-sidebar-list">
+              {(data.tools as string[]).map((t) => (
+                <li key={t} className="arch-sidebar-list-item">{t}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+
+      {/* Sub-skills (expandível) */}
+      {Array.isArray(data.sub_skills) && data.sub_skills.length > 0 && (
+        <div className="arch-sidebar-section">
+          <details>
+            <summary className="arch-sidebar-expandable">
+              <h3>Sub-skills ({(data.sub_skills as string[]).length})</h3>
+            </summary>
+            <ul className="arch-sidebar-list">
+              {(data.sub_skills as string[]).map((s) => (
+                <li key={s} className="arch-sidebar-list-item">{s}</li>
+              ))}
+            </ul>
+          </details>
         </div>
       )}
 

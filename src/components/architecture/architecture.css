@@ -509,3 +509,34 @@
   opacity: 0.5;
   flex-shrink: 0;
 }
+
+/* Expandable lists (tools, sub-skills) */
+.arch-sidebar-expandable {
+  cursor: pointer;
+  user-select: none;
+}
+.arch-sidebar-expandable h3 {
+  display: inline;
+  font-size: 0.8rem;
+}
+.arch-sidebar-expandable:hover {
+  color: var(--foreground);
+}
+.arch-sidebar-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.3rem 0 0;
+  max-height: 250px;
+  overflow-y: auto;
+}
+.arch-sidebar-list-item {
+  font-family: monospace;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+.arch-sidebar-list-item:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
