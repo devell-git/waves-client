@@ -200,7 +200,18 @@ function parseAnalysisReport(
   const m = content.match(ANALYSIS_REPORT_RE);
   if (!m) return null;
   try {
-    const o = JSON.parse(m[1]) as { workflow_id?: unknown; instruction?: unknown; ap_number?: unknown; scope?: unknown };
+    // Handle double-escaped quotes from gateway JSON serialization
+    type AnalysisPayload = { workflow_id?: unknown; instruction?: unknown; ap_number?: unknown; scope?: unknown };
+    let jsonStr = m[1];
+    let o: AnalysisPayload | null = null;
+    for (let attempt = 0; attempt < 3 && !o; attempt++) {
+      try {
+        o = JSON.parse(jsonStr) as AnalysisPayload;
+      } catch {
+        jsonStr = jsonStr.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      }
+    }
+    if (!o) return null;
     const wf = Number(o.workflow_id);
     const scope = typeof o.scope === "string" ? o.scope : undefined;
     const isProject = scope === "project" || (!Number.isFinite(wf) && !o.ap_number);
