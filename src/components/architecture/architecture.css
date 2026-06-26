@@ -540,3 +540,10 @@
   background: var(--accent);
   color: var(--foreground);
 }
+.arch-sidebar-list-item--agent {
+  color: var(--chart-1);
+  font-weight: 600;
+}
+.arch-sidebar-list-item--agent::before {
+  content: "🤖 ";
+}

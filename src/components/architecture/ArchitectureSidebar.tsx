@@ -117,6 +117,22 @@ export function ArchitectureSidebar({ node, graph, onClose, onSelect, recentCall
         </div>
       )}
 
+      {/* Sub-agent skills (expandível) */}
+      {Array.isArray(data.sub_agent_skills) && data.sub_agent_skills.length > 0 && (
+        <div className="arch-sidebar-section">
+          <details>
+            <summary className="arch-sidebar-expandable">
+              <h3>Sub-agentes ({(data.sub_agent_skills as string[]).length})</h3>
+            </summary>
+            <ul className="arch-sidebar-list">
+              {(data.sub_agent_skills as string[]).map((s) => (
+                <li key={s} className="arch-sidebar-list-item arch-sidebar-list-item--agent">{s}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+
       {/* Sub-skills (expandível) */}
       {Array.isArray(data.sub_skills) && data.sub_skills.length > 0 && (
         <div className="arch-sidebar-section">
