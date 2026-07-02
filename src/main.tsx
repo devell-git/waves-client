@@ -6,14 +6,17 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ThemeProvider } from "./hooks/use-system-theme";
+import { TenantThemeProvider } from "./lib/themes";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <TenantThemeProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </TenantThemeProvider>
     </ThemeProvider>
   </StrictMode>,
 );

@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import type { WavesUser } from "../types/auth";
 import { useThemeControls } from "../hooks/use-system-theme";
 import { isAdmin } from "../lib/message-meta";
+import { useTenantTheme } from "../lib/themes";
 
 interface UserMenuProps {
   user: WavesUser;
@@ -71,6 +72,7 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({});
   const { mode, toggle } = useThemeControls();
+  const { presetName, allPresets, switchPreset } = useTenantTheme();
   const navigate = useNavigate();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -168,6 +170,26 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
             >
               <span className="user-menu-item-label">SOC Dashboard</span>
             </button>
+            <div className="user-menu-separator" role="separator" />
+            <div className="user-menu-section-label">Tema visual</div>
+            {Object.entries(allPresets).map(([key, p]) => (
+              <button
+                key={key}
+                type="button"
+                className={`user-menu-item${key === presetName ? " user-menu-item--active" : ""}`}
+                role="menuitemradio"
+                aria-checked={key === presetName}
+                onClick={() => switchPreset(key)}
+              >
+                <span
+                  className="user-menu-theme-swatch"
+                  style={{ background: `linear-gradient(135deg, ${p.dark.primary}, ${p.dark.accent})` }}
+                  aria-hidden="true"
+                />
+                <span className="user-menu-item-label">{p.name}</span>
+                <span className="user-menu-item-hint">{p.segment}</span>
+              </button>
+            ))}
           </>
         )}
         <div className="user-menu-separator" role="separator" />
