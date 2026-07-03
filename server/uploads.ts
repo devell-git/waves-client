@@ -33,7 +33,7 @@ import mammoth from "mammoth";
 // Importa o módulo interno — o entrypoint `pdf-parse` roda código de debug
 // (lê um PDF de teste) quando `module.parent` é undefined, o que quebra em ESM.
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
-import { getActiveTenant } from "./tenants.js";
+import { getActiveTenant, isTenantResolved, type Tenant } from "./tenants.js";
 import { getWavesUser, type WavesSession } from "./waves-client.js";
 import { signUpload, verifyUpload } from "./signed-url.js";
 
@@ -166,18 +166,31 @@ export interface UploadedFileMeta {
 
 export const uploadsRouter = Router();
 
-uploadsRouter.post("/", upload.array("files", MAX_FILES), async (req, res) => {
+// Captura o tenant ANTES do multer — o multer (busboy/streams) pode perder o
+// contexto do AsyncLocalStorage, fazendo getActiveTenant() retornar UNRESOLVED
+// dentro do handler async. Fixando no req, o handler usa o tenant certo.
+uploadsRouter.post("/", (req, _res, next) => {
+  (req as any)._tenant = getActiveTenant();
+  next();
+}, upload.array("files", MAX_FILES), async (req, res) => {
   // Auth obrigatória: o upload é vinculado ao TENANT (host/ALS) + USUÁRIO (token).
   const token = bearerOf(req);
   if (!token) return res.status(401).json({ error: "Autenticação necessária." });
-  const tenant = getActiveTenant().id;
+  const tenant = (req as any)._tenant as Tenant;
+  if (!isTenantResolved(tenant)) {
+    const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "?";
+    console.error(`[upload] tenant não resolvido para host="${host}"`);
+    return res.status(421).json({ error: "Tenant não configurado para este host." });
+  }
   let owner: number;
   try {
     const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
-    const user = await getWavesUser({ environment: env, accessToken: token });
+    const user = await getWavesUser({ environment: env, accessToken: token }, tenant);
     owner = user.id;
-  } catch {
-    return res.status(401).json({ error: "Token Babble inválido." });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[upload] getWavesUser falhou — tenant=${tenant.id} host=${req.headers.host}: ${detail}`);
+    return res.status(401).json({ error: "Falha na validação do token.", detail });
   }
 
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
@@ -189,7 +202,7 @@ uploadsRouter.post("/", upload.array("files", MAX_FILES), async (req, res) => {
   for (const f of files) {
     const id = randomUUID();
     // uploads/<tenant>/<owner>/<uuid>/ — separação física por tenant+usuário.
-    const dir = resolve(UPLOAD_DIR, seg(tenant), seg(owner), id);
+    const dir = resolve(UPLOAD_DIR, seg(tenant.id), seg(owner), id);
     mkdirSync(dir, { recursive: true });
     const safe = sanitize(f.originalname);
     const fullPath = resolve(dir, safe);

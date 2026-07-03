@@ -18,8 +18,8 @@ interface EnvConfig {
   token: string;
 }
 
-function getEnvConfig(): EnvConfig {
-  const tenant = getActiveTenant();
+function getEnvConfig(explicitTenant?: import("./tenants.js").Tenant): EnvConfig {
+  const tenant = explicitTenant ?? getActiveTenant();
   return { url: tenant.url, token: tenant.key };
 }
 
@@ -27,8 +27,10 @@ async function wavesFetch(
   session: WavesSession,
   path: string,
   init?: RequestInit,
+  /** Tenant explícito — usa em vez do ALS (necessário quando multer quebra o contexto). */
+  explicitTenant?: import("./tenants.js").Tenant,
 ): Promise<unknown> {
-  const cfg = getEnvConfig();
+  const cfg = getEnvConfig(explicitTenant);
 
   if (!cfg.url || !cfg.token) {
     throw new Error("Credenciais Waves ausentes no servidor (.env).");
@@ -77,8 +79,10 @@ async function wavesFetch(
  */
 export async function getWavesUser(
   session: WavesSession,
+  /** Tenant explícito — usa em vez do ALS (necessário quando multer quebra o AsyncLocalStorage). */
+  explicitTenant?: import("./tenants.js").Tenant,
 ): Promise<{ id: number } & Record<string, unknown>> {
-  const body = (await wavesFetch(session, "/user")) as Record<string, unknown>;
+  const body = (await wavesFetch(session, "/user", undefined, explicitTenant)) as Record<string, unknown>;
   // A Waves devolve {status, data: {user: {id, ...}}}; também aceitamos
   // {data: {id}} ou o objeto direto, por robustez a variações de shape.
   const data =
