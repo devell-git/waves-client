@@ -793,48 +793,167 @@ app.post("/api/export-message", async (req, res) => {
         res.status(500).json({ error: "PDF generation failed" });
       }
     } else if (format === "docx") {
-      // Generate DOCX via python-docx
+      // Generate DOCX from HTML via python (html→docx with formatting)
       const { execSync } = await import("node:child_process");
       const fs = await import("node:fs");
       const os = await import("node:os");
       const path = await import("node:path");
 
-      const tmpTxt = path.join(os.tmpdir(), `export-${Date.now()}.txt`);
-      const tmpDocx = tmpTxt.replace(".txt", ".docx");
+      const tmpHtmlDoc = path.join(os.tmpdir(), `export-${Date.now()}.html`);
+      const tmpDocx = tmpHtmlDoc.replace(".html", ".docx");
+      const tmpPy = tmpHtmlDoc.replace(".html", ".py");
 
-      // Write text content
-      fs.writeFileSync(tmpTxt, text || html?.replace(/<[^>]+>/g, "") || "");
+      // Write HTML content
+      fs.writeFileSync(tmpHtmlDoc, html || text || "", "utf-8");
 
       const pyScript = `
-import sys
+import sys, re
+from pathlib import Path
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    # Fallback: strip tags and use plain text
+    html_raw = Path('${tmpHtmlDoc}').read_text(encoding='utf-8')
+    text = re.sub(r'<[^>]+>', '', html_raw)
+    doc = Document()
+    doc.styles['Normal'].font.name = 'Calibri'
+    doc.styles['Normal'].font.size = Pt(11)
+    for line in text.split('\\n'):
+        line = line.strip()
+        if line:
+            doc.add_paragraph(line)
+    doc.save('${tmpDocx}')
+    sys.exit(0)
+
+html_raw = Path('${tmpHtmlDoc}').read_text(encoding='utf-8')
+soup = BeautifulSoup(html_raw, 'html.parser')
 
 doc = Document()
 style = doc.styles['Normal']
 style.font.name = 'Calibri'
 style.font.size = Pt(11)
 
-text = open('${tmpTxt}', encoding='utf-8').read()
-for line in text.split('\\n'):
-    line = line.strip()
-    if not line:
-        doc.add_paragraph('')
-    elif line.startswith('# '):
-        doc.add_heading(line[2:], level=1)
-    elif line.startswith('## '):
-        doc.add_heading(line[3:], level=2)
-    elif line.startswith('### '):
-        doc.add_heading(line[4:], level=3)
-    elif line.startswith('- ') or line.startswith('• '):
-        doc.add_paragraph(line[2:], style='List Bullet')
+def add_formatted_text(paragraph, element):
+    """Recursively add formatted text from HTML element."""
+    for child in element.children:
+        if isinstance(child, str):
+            text = child.strip()
+            if text:
+                paragraph.add_run(text)
+        elif child.name == 'strong' or child.name == 'b':
+            run = paragraph.add_run(child.get_text())
+            run.bold = True
+        elif child.name == 'em' or child.name == 'i':
+            run = paragraph.add_run(child.get_text())
+            run.italic = True
+        elif child.name == 'code':
+            run = paragraph.add_run(child.get_text())
+            run.font.name = 'Consolas'
+            run.font.size = Pt(9)
+        elif child.name == 'br':
+            paragraph.add_run('\\n')
+        elif child.name == 'span':
+            add_formatted_text(paragraph, child)
+        else:
+            text = child.get_text().strip()
+            if text:
+                paragraph.add_run(text)
+
+def process_element(el):
+    """Process an HTML element into docx."""
+    if isinstance(el, str):
+        text = el.strip()
+        if text:
+            doc.add_paragraph(text)
+        return
+
+    tag = getattr(el, 'name', None)
+    if not tag:
+        return
+
+    if tag in ('h1', 'h2', 'h3', 'h4'):
+        level = int(tag[1])
+        doc.add_heading(el.get_text().strip(), level=level)
+
+    elif tag == 'p':
+        p = doc.add_paragraph()
+        add_formatted_text(p, el)
+
+    elif tag == 'ul':
+        for li in el.find_all('li', recursive=False):
+            p = doc.add_paragraph(style='List Bullet')
+            add_formatted_text(p, li)
+
+    elif tag == 'ol':
+        for li in el.find_all('li', recursive=False):
+            p = doc.add_paragraph(style='List Number')
+            add_formatted_text(p, li)
+
+    elif tag == 'table':
+        rows = el.find_all('tr')
+        if not rows:
+            return
+        # Count columns
+        first_row = rows[0]
+        cols = first_row.find_all(['th', 'td'])
+        if not cols:
+            return
+        table = doc.add_table(rows=0, cols=len(cols))
+        table.style = 'Table Grid'
+        for tr in rows:
+            cells = tr.find_all(['th', 'td'])
+            row = table.add_row()
+            for i, cell in enumerate(cells):
+                if i < len(row.cells):
+                    row.cells[i].text = cell.get_text().strip()
+                    # Bold headers
+                    if cell.name == 'th':
+                        for p in row.cells[i].paragraphs:
+                            for run in p.runs:
+                                run.bold = True
+
+    elif tag == 'blockquote':
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Inches(0.5)
+        add_formatted_text(p, el)
+        for run in p.runs:
+            run.italic = True
+
+    elif tag == 'pre':
+        p = doc.add_paragraph()
+        run = p.add_run(el.get_text())
+        run.font.name = 'Consolas'
+        run.font.size = Pt(9)
+
+    elif tag == 'hr':
+        doc.add_paragraph('_' * 50)
+
+    elif tag in ('div', 'section', 'article', 'main', 'body', 'html'):
+        for child in el.children:
+            process_element(child)
+
+    elif tag == 'input' and el.get('type') == 'checkbox':
+        checked = '☑' if el.get('checked') is not None else '☐'
+        # Will be picked up by parent
+        pass
+
     else:
-        doc.add_paragraph(line)
+        text = el.get_text().strip()
+        if text and tag not in ('script', 'style', 'button', 'svg', 'path'):
+            p = doc.add_paragraph()
+            add_formatted_text(p, el)
+
+# Process
+for child in soup.children:
+    process_element(child)
 
 doc.save('${tmpDocx}')
 `;
-      const tmpPy = tmpTxt.replace(".txt", ".py");
       fs.writeFileSync(tmpPy, pyScript);
 
       execSync(
@@ -846,9 +965,7 @@ doc.save('${tmpDocx}')
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         res.setHeader("Content-Disposition", "attachment; filename=mensagem.docx");
         res.send(fs.readFileSync(tmpDocx));
-        fs.unlinkSync(tmpTxt);
-        fs.unlinkSync(tmpPy);
-        fs.unlinkSync(tmpDocx);
+        try { fs.unlinkSync(tmpHtmlDoc); fs.unlinkSync(tmpPy); fs.unlinkSync(tmpDocx); } catch {}
       } else {
         res.status(500).json({ error: "DOCX generation failed" });
       }
