@@ -711,6 +711,136 @@ app.get("/api/architecture/activity", async (req, res) => {
   }
 });
 
+// --- Export message as PDF or DOCX -------------------------------------------
+app.post("/api/export-message", async (req, res) => {
+  const { format, html, text } = req.body ?? {};
+  if (!format || (!html && !text)) {
+    return res.status(400).json({ error: "format + html/text required" });
+  }
+
+  try {
+    if (format === "pdf") {
+      // Use puppeteer-lite or simple HTML-to-PDF via headless chrome
+      const { execSync } = await import("node:child_process");
+      const fs = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+
+      const tmpHtml = path.join(os.tmpdir(), `export-${Date.now()}.html`);
+      const tmpPdf = tmpHtml.replace(".html", ".pdf");
+
+      const fullHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 32px; color: #1e293b; line-height: 1.6; max-width: 800px; margin: 0 auto; }
+  h1,h2,h3 { color: #0f172a; } table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th,td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+  th { background: #f1f5f9; } code { background: #f1f5f9; padding: 2px 4px; border-radius: 3px; }
+  pre { background: #f8fafc; padding: 12px; border-radius: 6px; overflow-x: auto; }
+</style></head><body>${html || `<pre>${text}</pre>`}</body></html>`;
+
+      fs.writeFileSync(tmpHtml, fullHtml);
+
+      // Try chromium/chrome for PDF
+      const browsers = [
+        "/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+      ];
+      let browserPath = "";
+      for (const b of browsers) {
+        if (fs.existsSync(b)) { browserPath = b; break; }
+      }
+
+      if (browserPath) {
+        execSync(
+          `${browserPath} --headless --no-sandbox --disable-gpu --print-to-pdf=${tmpPdf} --no-pdf-header-footer ${tmpHtml}`,
+          { timeout: 15000 },
+        );
+      } else {
+        // Fallback: use python weasyprint
+        execSync(
+          `/home/bot/.hermes/hermes-agent/venv/bin/python -c "from weasyprint import HTML; HTML(filename='${tmpHtml}').write_pdf('${tmpPdf}')"`,
+          { timeout: 15000 },
+        );
+      }
+
+      if (fs.existsSync(tmpPdf)) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "attachment; filename=mensagem.pdf");
+        res.send(fs.readFileSync(tmpPdf));
+        fs.unlinkSync(tmpHtml);
+        fs.unlinkSync(tmpPdf);
+      } else {
+        res.status(500).json({ error: "PDF generation failed" });
+      }
+    } else if (format === "docx") {
+      // Generate DOCX via python-docx
+      const { execSync } = await import("node:child_process");
+      const fs = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+
+      const tmpTxt = path.join(os.tmpdir(), `export-${Date.now()}.txt`);
+      const tmpDocx = tmpTxt.replace(".txt", ".docx");
+
+      // Write text content
+      fs.writeFileSync(tmpTxt, text || html?.replace(/<[^>]+>/g, "") || "");
+
+      const pyScript = `
+import sys
+from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+doc = Document()
+style = doc.styles['Normal']
+style.font.name = 'Calibri'
+style.font.size = Pt(11)
+
+text = open('${tmpTxt}', encoding='utf-8').read()
+for line in text.split('\\n'):
+    line = line.strip()
+    if not line:
+        doc.add_paragraph('')
+    elif line.startswith('# '):
+        doc.add_heading(line[2:], level=1)
+    elif line.startswith('## '):
+        doc.add_heading(line[3:], level=2)
+    elif line.startswith('### '):
+        doc.add_heading(line[4:], level=3)
+    elif line.startswith('- ') or line.startswith('• '):
+        doc.add_paragraph(line[2:], style='List Bullet')
+    else:
+        doc.add_paragraph(line)
+
+doc.save('${tmpDocx}')
+`;
+      const tmpPy = tmpTxt.replace(".txt", ".py");
+      fs.writeFileSync(tmpPy, pyScript);
+
+      execSync(
+        `/home/bot/.hermes/hermes-agent/venv/bin/python ${tmpPy}`,
+        { timeout: 15000 },
+      );
+
+      if (fs.existsSync(tmpDocx)) {
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        res.setHeader("Content-Disposition", "attachment; filename=mensagem.docx");
+        res.send(fs.readFileSync(tmpDocx));
+        fs.unlinkSync(tmpTxt);
+        fs.unlinkSync(tmpPy);
+        fs.unlinkSync(tmpDocx);
+      } else {
+        res.status(500).json({ error: "DOCX generation failed" });
+      }
+    } else {
+      res.status(400).json({ error: "format must be pdf or docx" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: `Export failed: ${err instanceof Error ? err.message : "unknown"}` });
+  }
+});
+
 // --- Proxy token consumption (Token Dashboard #852) -------------------------
 app.get("/api/architecture/tokens", async (req, res) => {
   if (!(await isAdminFromBearer(req.headers.authorization as string | undefined))) {

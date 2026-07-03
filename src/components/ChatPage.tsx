@@ -21,6 +21,7 @@ import { AnalysisReport } from "../lib/shadcn-genui/components/analysis-report";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { UserMessageView } from "./UserMessageView";
+import { MessageExport } from "./MessageExport";
 import { NotificationBell } from "./NotificationBell";
 import { FilePreviewer } from "./FilePreviewer";
 import { ShareFileDialog } from "./ShareFileDialog";
@@ -368,6 +369,7 @@ function MessageMeta({
           🪙 {usage ? `${usage.t} tok · P:${usage.p}/C:${usage.c}` : "0 tok"}
         </span>
       )}
+      <MessageExport messageId={id} />
     </div>
   );
 }
