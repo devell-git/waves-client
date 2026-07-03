@@ -302,12 +302,8 @@ export async function fetchAssistantFunnelApi(
  * O usuário continua usando o app; se o token estiver REALMENTE morto, a
  * próxima request real vai falhar 401 e o cliente individual lida com isso.
  */
-export async function verifyApiSession(session: AuthSession): Promise<boolean> {
-  // Confia no expiresAt do localStorage — sem probe de rede.
-  // O probe anterior fazia fetch na Waves ao restaurar a sessão, mas se o
-  // servidor revogar tokens anteriores (ex: novo login) o probe invalidava
-  // a sessão imediatamente ao recarregar a página. Agora: se o token local
-  // não expirou, mantém. Se expirou, limpa. Erros 401 durante o uso normal
-  // são tratados pelo fetch-interceptor (redireciona pro login).
-  return session.expiresAt > Date.now();
+export async function verifyApiSession(_session: AuthSession): Promise<boolean> {
+  // Sem checagem — a sessão é sempre válida enquanto existir no localStorage.
+  // O logout acontece apenas quando o usuário clica em "Sair".
+  return true;
 }

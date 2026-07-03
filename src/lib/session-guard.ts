@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 
 export type ExpireReason = "expired" | "inactivity";
 
-const INACTIVITY_MS = 18 * 60 * 60_000; // 18h sem interação
+const INACTIVITY_MS = Infinity; // Desabilitado — logout só manual
 const WARN_BEFORE_MS = 5 * 60_000; // avisa 5 min antes da expiração absoluta
 const CHECK_INTERVAL_MS = 30_000; // checa a cada 30s
 

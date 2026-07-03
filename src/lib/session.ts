@@ -26,10 +26,7 @@ export function loadSession(): AuthSession | null {
     if (!session.accessToken || !session.user) {
       return null;
     }
-    if (session.expiresAt <= Date.now()) {
-      clearSession();
-      return null;
-    }
+    // Sem checagem de expiração — logout só manual.
     return normalizeSession(session);
   } catch {
     clearSession();
