@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { loginApi } from "../api/waves-api";
 import { isEnvConfigured } from "../config/env";
-import { createSession, saveSession } from "../lib/session";
+import { clearSession, createSession, saveSession } from "../lib/session";
 import { takeExpiredReason } from "../lib/session-guard";
 import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
 import type { AuthSession } from "../types/auth";
@@ -61,6 +61,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
     setLoading(true);
     try {
+      // Limpa qualquer sessão antiga antes de criar a nova
+      clearSession();
+
       const result = await loginApi(email.trim(), password);
       // Tenant da origem (host) — vincula as threads. Usa o já carregado ou
       // resolve agora se ainda não chegou.
