@@ -1353,6 +1353,7 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                 size: a.size,
                 url: a.url,
                 path: a.path,
+                contentPath: a.contentPath,
                 text: a.text,
                 truncated: a.truncated,
                 error: a.error,

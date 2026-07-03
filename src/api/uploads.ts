@@ -20,6 +20,8 @@ export interface UploadedFile {
   url: string;
   /** Caminho absoluto no servidor — referência pro agente. */
   path: string;
+  /** Caminho do content.txt (texto extraído completo, leitura sob demanda). */
+  contentPath?: string;
   /** Texto extraído (truncado se grande). Ausente em imagem/binário. */
   text?: string;
   truncated?: boolean;
