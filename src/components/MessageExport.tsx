@@ -49,23 +49,9 @@ export function MessageExport() {
         // Remover follow-ups
         clone.querySelectorAll("[class*='follow-up'], [class*='FollowUp'], [class*='followup'], [class*='suggestion']").forEach((el) => el.remove());
 
-        // Colapsáveis fechados: manter só o summary, remover conteúdo interno
-        clone.querySelectorAll("details:not([open])").forEach((det) => {
-          const summary = det.querySelector("summary");
-          if (summary) {
-            const p = document.createElement("p");
-            p.innerHTML = `<strong>${summary.textContent}</strong> <em>(colapsado)</em>`;
-            det.replaceWith(p);
-          } else {
-            det.remove();
-          }
-        });
-        // Colapsáveis abertos: remover o tag details/summary, manter conteúdo
-        clone.querySelectorAll("details[open]").forEach((det) => {
-          const div = document.createElement("div");
-          div.innerHTML = det.innerHTML;
-          div.querySelector("summary")?.remove();
-          det.replaceWith(div);
+        // Todos os colapsáveis: forçar aberto (exportar conteúdo completo)
+        clone.querySelectorAll("details").forEach((det) => {
+          det.setAttribute("open", "");
         });
 
         // Capturar os estilos computados e inline-ar
