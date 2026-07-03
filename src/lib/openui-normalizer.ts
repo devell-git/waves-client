@@ -1,228 +1,194 @@
 /**
- * OpenUI Normalizer — converte componentes OpenUI (Tailwind divs) em HTML semântico
- * para exportação fidedigna em PDF/Word.
+ * OpenUI Normalizer v2 — usa data-slot attributes para conversão precisa.
  *
- * Roda no clone do DOM ANTES de enviar ao backend. Transforma padrões visuais
- * (flex, rounded-xl, gap-6) em tags semânticas (table, h1, ul, section) que
- * weasyprint e python-docx entendem.
+ * OpenUI renderiza com data-slot="card", "card-title", "card-content", etc.
+ * Este normalizer converte para HTML semântico que weasyprint e python-docx entendem.
  */
 
-/** Remove SVGs (ícones) e substitui por texto equivalente */
-function replaceSvgs(el: HTMLElement): void {
-  el.querySelectorAll("svg").forEach((svg) => {
-    const parent = svg.parentElement;
-    // Checkbox SVG → text
-    if (parent?.classList.contains("shrink-0") || parent?.classList.contains("mt-0.5")) {
-      const isChecked = svg.querySelector("[data-checked]") || svg.innerHTML.includes("check");
-      const span = document.createElement("span");
-      span.textContent = isChecked ? "☑ " : "☐ ";
-      svg.replaceWith(span);
-    } else {
-      svg.remove();
-    }
-  });
-}
-
-/** Detecta se elemento é um KPI card (número grande + label pequeno) */
-function isKpiCard(el: HTMLElement): boolean {
-  const children = Array.from(el.children) as HTMLElement[];
-  if (children.length < 2) return false;
-  const hasLargeNum = children.some((c) => {
-    const fs = window.getComputedStyle(c).fontSize;
-    return fs && parseFloat(fs) >= 20;
-  });
-  const hasSmallLabel = children.some((c) => {
-    const fs = window.getComputedStyle(c).fontSize;
-    return fs && parseFloat(fs) <= 13;
-  });
-  return hasLargeNum && hasSmallLabel;
-}
-
-/** Detecta se é um container flex de KPIs */
-function isKpiRow(el: HTMLElement): boolean {
-  const style = window.getComputedStyle(el);
-  if (style.display !== "flex") return false;
-  const children = Array.from(el.children) as HTMLElement[];
-  return children.length >= 2 && children.every((c) => isKpiCard(c));
-}
-
-/** Converte row de KPIs em tabela HTML */
-function kpiRowToTable(el: HTMLElement): HTMLElement {
-  const children = Array.from(el.children) as HTMLElement[];
-  const table = document.createElement("table");
-  table.style.cssText = "width:100%;border-collapse:collapse;margin:12px 0;";
-
-  const headerRow = document.createElement("tr");
-  const valueRow = document.createElement("tr");
-
-  for (const child of children) {
-    const texts = Array.from(child.children) as HTMLElement[];
-    const value = texts.find((t) => {
-      const fs = window.getComputedStyle(t).fontSize;
-      return fs && parseFloat(fs) >= 20;
-    });
-    const label = texts.find((t) => {
-      const fs = window.getComputedStyle(t).fontSize;
-      return fs && parseFloat(fs) <= 13;
-    });
-
-    const th = document.createElement("th");
-    th.textContent = label?.textContent?.trim() ?? "";
-    th.style.cssText = "padding:8px 12px;border:1px solid #e2e8f0;background:#f1f5f9;font-size:11px;text-transform:uppercase;letter-spacing:0.03em;text-align:center;";
-    headerRow.appendChild(th);
-
-    const td = document.createElement("td");
-    td.textContent = value?.textContent?.trim() ?? "";
-    // Copy color from original
-    if (value) {
-      const color = window.getComputedStyle(value).color;
-      const fw = window.getComputedStyle(value).fontWeight;
-      td.style.cssText = `padding:8px 12px;border:1px solid #e2e8f0;text-align:center;font-size:20px;font-weight:${fw};color:${color};`;
-    } else {
-      td.style.cssText = "padding:8px 12px;border:1px solid #e2e8f0;text-align:center;font-size:20px;font-weight:700;";
-    }
-
-    // Background from KPI card
-    const bg = window.getComputedStyle(child).backgroundColor;
-    if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
-      td.style.backgroundColor = bg;
-    }
-
-    valueRow.appendChild(td);
-  }
-
-  table.appendChild(headerRow);
-  table.appendChild(valueRow);
-  return table;
-}
-
-/** Detecta se é uma lista de items repetitivos (cards empilhados = tasks) */
-function isRepeatedCardList(el: HTMLElement): boolean {
-  const children = Array.from(el.children).filter(
-    (c) => c instanceof HTMLElement && c.textContent?.trim(),
-  ) as HTMLElement[];
-  if (children.length < 3) return false;
-
-  // Check if children have similar structure (same tag, similar class count)
-  const firstClasses = children[0].className.split(" ").length;
-  const allSimilar = children.every((c) => {
-    const cls = c.className.split(" ").length;
-    return Math.abs(cls - firstClasses) <= 2 && c.tagName === children[0].tagName;
-  });
-  return allSimilar;
-}
-
-/** Converte lista de cards repetitivos em tabela */
-function repeatedCardsToTable(el: HTMLElement): HTMLElement | null {
-  const children = Array.from(el.children).filter(
-    (c) => c instanceof HTMLElement && c.textContent?.trim(),
-  ) as HTMLElement[];
-  if (children.length < 2) return null;
-
-  // Extract text content from each card as columns
-  const rows: string[][] = [];
-  for (const child of children) {
-    const texts: string[] = [];
-    // Walk leaf text nodes
-    const walk = (node: HTMLElement) => {
-      for (const c of Array.from(node.children) as HTMLElement[]) {
-        const text = c.textContent?.trim() ?? "";
-        if (text && !c.querySelector("*")?.children.length) {
-          texts.push(text);
-        } else if (c.children.length) {
-          walk(c);
-        }
-      }
-    };
-    walk(child);
-    if (texts.length > 0) rows.push(texts);
-  }
-
-  if (rows.length < 2) return null;
-
-  // Normalize column count
-  const maxCols = Math.max(...rows.map((r) => r.length));
-  if (maxCols < 2 || maxCols > 10) return null;
-
-  const table = document.createElement("table");
-  table.style.cssText = "width:100%;border-collapse:collapse;margin:12px 0;";
-
-  for (let i = 0; i < rows.length; i++) {
-    const tr = document.createElement("tr");
-    for (let j = 0; j < maxCols; j++) {
-      const td = document.createElement("td");
-      td.textContent = rows[i][j] ?? "";
-      td.style.cssText = "padding:6px 10px;border:1px solid #e2e8f0;font-size:12px;";
-      if (i % 2 === 1) td.style.backgroundColor = "#f8fafc";
-      tr.appendChild(td);
-    }
-    table.appendChild(tr);
-  }
-
-  return table;
-}
-
-/** Converte Card OpenUI em section HTML semântica */
-function normalizeCard(card: HTMLElement): void {
-  // Card header → h3
-  const headers = card.querySelectorAll<HTMLElement>(".leading-none.font-semibold, [class*='font-semibold']:first-child");
-  headers.forEach((h) => {
-    const h3 = document.createElement("h3");
-    h3.textContent = h.textContent?.trim() ?? "";
-    h3.style.cssText = "font-size:14pt;font-weight:600;margin:8px 0 4px;";
-    h.replaceWith(h3);
-  });
-
-  // Subtitle → p.muted
-  card.querySelectorAll<HTMLElement>(".text-muted-foreground, [class*='text-muted']").forEach((sub) => {
-    const p = document.createElement("p");
-    p.textContent = sub.textContent?.trim() ?? "";
-    p.style.cssText = "color:#64748b;font-size:12px;margin:2px 0;";
-    sub.replaceWith(p);
-  });
-}
-
-/**
- * Normaliza o HTML clonado de um card OpenUI para export.
- * Chama ANTES de enviar ao backend.
- */
 export function normalizeForExport(clone: HTMLElement): void {
-  // 1. Remove SVGs (ícones)
-  replaceSvgs(clone);
+  // 1. Remove ALL SVGs (ícones, checkboxes visuais, chevrons)
+  clone.querySelectorAll("svg").forEach((svg) => svg.remove());
 
-  // 2. Convert KPI rows to tables
+  // 2. Remove chevron buttons and expand indicators
+  clone.querySelectorAll("[aria-hidden='true']").forEach((el) => {
+    if (!el.textContent?.trim()) el.remove();
+  });
+
+  // 3. Card title → h2
+  clone.querySelectorAll<HTMLElement>("[data-slot='card-title']").forEach((el) => {
+    const h2 = document.createElement("h2");
+    h2.textContent = el.textContent?.trim() ?? "";
+    h2.style.cssText = "font-size:16pt;font-weight:700;color:#0f172a;margin:0 0 4px;border-bottom:2px solid #6366f1;padding-bottom:4px;";
+    el.replaceWith(h2);
+  });
+
+  // 4. Card description → p.subtitle
+  clone.querySelectorAll<HTMLElement>("[data-slot='card-description']").forEach((el) => {
+    const p = document.createElement("p");
+    p.textContent = el.textContent?.trim() ?? "";
+    p.style.cssText = "color:#64748b;font-size:12px;margin:0 0 12px;";
+    el.replaceWith(p);
+  });
+
+  // 5. Card header → remove wrapper (content already converted)
+  clone.querySelectorAll<HTMLElement>("[data-slot='card-header']").forEach((el) => {
+    const div = document.createElement("div");
+    div.innerHTML = el.innerHTML;
+    el.replaceWith(div);
+  });
+
+  // 6. Card → section with border
+  clone.querySelectorAll<HTMLElement>("[data-slot='card']").forEach((card) => {
+    const section = document.createElement("section");
+    section.innerHTML = card.innerHTML;
+    section.style.cssText = "border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:12px 0;background:#fff;";
+    card.replaceWith(section);
+  });
+
+  // 7. Checklist items (ol > li with checkbox pattern) → clean numbered list
+  clone.querySelectorAll<HTMLElement>("ol").forEach((ol) => {
+    const items = ol.querySelectorAll("li");
+    const newOl = document.createElement("ol");
+    newOl.style.cssText = "list-style-type:decimal;padding-left:24px;margin:8px 0;";
+
+    items.forEach((li) => {
+      // Extract just the text content (skip SVGs already removed)
+      const textDivs = li.querySelectorAll<HTMLElement>("[class*='leading-snug'], [class*='text-sm'], [class*='flex-1'] > div");
+      let text = "";
+      if (textDivs.length > 0) {
+        text = Array.from(textDivs).map((d) => d.textContent?.trim()).filter(Boolean).join(" ");
+      }
+      if (!text) {
+        // Fallback: get all text, clean up
+        text = li.textContent?.trim() ?? "";
+      }
+
+      if (text) {
+        const newLi = document.createElement("li");
+        newLi.textContent = text;
+        newLi.style.cssText = "margin:4px 0;font-size:11pt;line-height:1.5;padding:4px 0;";
+        newOl.appendChild(newLi);
+      }
+    });
+
+    if (newOl.children.length > 0) {
+      ol.replaceWith(newOl);
+    }
+  });
+
+  // 8. Unordered lists
+  clone.querySelectorAll<HTMLElement>("ul").forEach((ul) => {
+    ul.style.cssText = "list-style-type:disc;padding-left:24px;margin:8px 0;";
+    ul.querySelectorAll("li").forEach((li) => {
+      li.style.cssText = "margin:3px 0;font-size:11pt;";
+    });
+  });
+
+  // 9. Section headers (font-semibold divs that aren't card-title)
   clone.querySelectorAll<HTMLElement>("div").forEach((div) => {
-    if (isKpiRow(div)) {
-      const table = kpiRowToTable(div);
-      div.replaceWith(table);
+    const cls = div.className || "";
+    if (cls.includes("font-semibold") && !div.querySelector("*") && div.textContent?.trim()) {
+      const h3 = document.createElement("h3");
+      h3.textContent = div.textContent.trim();
+      h3.style.cssText = "font-size:13pt;font-weight:600;color:#334155;margin:12px 0 6px;";
+      div.replaceWith(h3);
     }
   });
 
-  // 3. Normalize Card headers
-  clone.querySelectorAll<HTMLElement>("[class*='flex'][class*='flex-col'][class*='gap-6'], [class*='rounded-xl'][class*='border']").forEach((card) => {
-    normalizeCard(card);
-  });
-
-  // 4. Convert repeated card lists to tables
-  clone.querySelectorAll<HTMLElement>("[class*='space-y']").forEach((list) => {
-    if (isRepeatedCardList(list)) {
-      const table = repeatedCardsToTable(list);
-      if (table) list.replaceWith(table);
-    }
-  });
-
-  // 5. Ordered lists → keep as ol
-  // (already semantic, just ensure styling)
-  clone.querySelectorAll("ol").forEach((ol) => {
-    ol.style.cssText = "list-style-type:decimal;padding-left:20px;margin:8px 0;";
-  });
-  clone.querySelectorAll("ul").forEach((ul) => {
-    ul.style.cssText = "list-style-type:disc;padding-left:20px;margin:8px 0;";
-  });
-
-  // 6. Ensure all text paragraphs have basic styling
-  clone.querySelectorAll<HTMLElement>(".text-base, p").forEach((p) => {
+  // 10. Text paragraphs
+  clone.querySelectorAll<HTMLElement>("p").forEach((p) => {
     if (!p.style.fontSize) p.style.fontSize = "11pt";
     if (!p.style.lineHeight) p.style.lineHeight = "1.5";
+    if (!p.style.margin) p.style.margin = "6px 0";
+  });
+
+  // 11. KPI detection: divs with large number + small label
+  clone.querySelectorAll<HTMLElement>("div").forEach((div) => {
+    const children = Array.from(div.children) as HTMLElement[];
+    if (children.length < 2 || children.length > 6) return;
+
+    // Check if this looks like a KPI row (flex container of KPI cards)
+    const display = window.getComputedStyle(div).display;
+    if (display !== "flex") return;
+
+    const allKpi = children.every((child) => {
+      const texts = child.textContent?.trim().split("\n").map((t) => t.trim()).filter(Boolean) ?? [];
+      return texts.length >= 1 && texts.length <= 3;
+    });
+
+    if (!allKpi || children.length < 2) return;
+
+    // Convert to table
+    const table = document.createElement("table");
+    table.style.cssText = "width:100%;border-collapse:collapse;margin:12px 0;";
+    const trHead = document.createElement("tr");
+    const trVal = document.createElement("tr");
+
+    for (const child of children) {
+      const texts = child.textContent?.trim().split("\n").map((t) => t.trim()).filter(Boolean) ?? [];
+      const bg = window.getComputedStyle(child).backgroundColor;
+
+      // Determine which is value (shorter, usually first) and label
+      let value = texts[0] ?? "";
+      let label = texts[1] ?? "";
+      // If first text is longer, swap
+      if (value.length > label.length && label.length > 0) {
+        [value, label] = [label, value];
+      }
+
+      const th = document.createElement("th");
+      th.textContent = label;
+      th.style.cssText = "padding:6px 10px;border:1px solid #e2e8f0;background:#f1f5f9;font-size:10px;text-transform:uppercase;text-align:center;";
+      trHead.appendChild(th);
+
+      const td = document.createElement("td");
+      td.textContent = value;
+      td.style.cssText = `padding:8px 10px;border:1px solid #e2e8f0;text-align:center;font-size:18px;font-weight:700;`;
+
+      // Preserve background color
+      if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
+        td.style.backgroundColor = bg;
+      }
+
+      // Preserve text color from computed style
+      const valEl = Array.from(child.children).find((c) => {
+        const fs = window.getComputedStyle(c as HTMLElement).fontSize;
+        return fs && parseFloat(fs) >= 18;
+      }) as HTMLElement | undefined;
+      if (valEl) {
+        td.style.color = window.getComputedStyle(valEl).color;
+      }
+
+      trVal.appendChild(td);
+    }
+
+    table.appendChild(trHead);
+    table.appendChild(trVal);
+    div.replaceWith(table);
+  });
+
+  // 12. Remove empty divs and clean up spacing
+  clone.querySelectorAll<HTMLElement>("div").forEach((div) => {
+    if (!div.textContent?.trim() && !div.querySelector("table, section, h2, h3, ol, ul, img")) {
+      div.remove();
+    }
+  });
+
+  // 13. Force details open
+  clone.querySelectorAll("details").forEach((det) => {
+    det.setAttribute("open", "");
+  });
+
+  // 14. Tables: ensure styling
+  clone.querySelectorAll<HTMLElement>("table").forEach((table) => {
+    if (!table.style.borderCollapse) {
+      table.style.cssText += ";width:100%;border-collapse:collapse;margin:8px 0;";
+    }
+    table.querySelectorAll("th").forEach((th) => {
+      if (!th.style.border) th.style.cssText += ";border:1px solid #e2e8f0;padding:8px 10px;background:#f1f5f9;font-size:11px;text-align:left;";
+    });
+    table.querySelectorAll("td").forEach((td) => {
+      if (!td.style.border) td.style.cssText += ";border:1px solid #e2e8f0;padding:8px 10px;";
+    });
   });
 }

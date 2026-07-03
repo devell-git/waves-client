@@ -760,28 +760,11 @@ app.post("/api/export-message", async (req, res) => {
 
       fs.writeFileSync(tmpHtml, fullHtml);
 
-      // Try chromium/chrome for PDF
-      const browsers = [
-        "/usr/bin/chromium-browser", "/usr/bin/chromium", "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-      ];
-      let browserPath = "";
-      for (const b of browsers) {
-        if (fs.existsSync(b)) { browserPath = b; break; }
-      }
-
-      if (browserPath) {
-        execSync(
-          `${browserPath} --headless --no-sandbox --disable-gpu --print-to-pdf=${tmpPdf} --no-pdf-header-footer ${tmpHtml}`,
-          { timeout: 15000 },
-        );
-      } else {
-        // Fallback: use python weasyprint
-        execSync(
-          `/home/bot/.hermes/hermes-agent/venv/bin/python -c "from weasyprint import HTML; HTML(filename='${tmpHtml}').write_pdf('${tmpPdf}')"`,
-          { timeout: 15000 },
-        );
-      }
+      // Use weasyprint (reliable, no dbus issues)
+      execSync(
+        `/home/bot/.hermes/hermes-agent/venv/bin/python -c "from weasyprint import HTML; HTML(filename='${tmpHtml}').write_pdf('${tmpPdf}')"`,
+        { timeout: 15000 },
+      );
 
       if (fs.existsSync(tmpPdf)) {
         res.setHeader("Content-Type", "application/pdf");
