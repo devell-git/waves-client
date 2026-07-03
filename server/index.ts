@@ -711,6 +711,23 @@ app.get("/api/architecture/activity", async (req, res) => {
   }
 });
 
+// --- Proxy token consumption (Token Dashboard #852) -------------------------
+app.get("/api/architecture/tokens", async (req, res) => {
+  if (!(await isAdminFromBearer(req.headers.authorization as string | undefined))) {
+    return res.status(403).json({ error: "Apenas administradores." });
+  }
+  const days = req.query.days || "30";
+  try {
+    const upstream = await fetch(`${GRAPH_API_BASE}/architecture/tokens?days=${days}`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await upstream.text();
+    res.status(upstream.status).set("Content-Type", "application/json").send(text);
+  } catch (err) {
+    res.status(502).json({ error: `graph-api unreachable: ${err instanceof Error ? err.message : "unknown"}` });
+  }
+});
+
 // --- Spec OpenUI da Waves (cache 5min server-side) ------------------------
 app.get("/api/openui/spec", async (_req, res) => {
   try {
