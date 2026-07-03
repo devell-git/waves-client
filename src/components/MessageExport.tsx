@@ -54,13 +54,38 @@ export function MessageExport() {
           det.setAttribute("open", "");
         });
 
-        // Capturar os estilos computados e inline-ar
-        const styles = Array.from(document.styleSheets)
-          .map((sheet) => {
-            try { return Array.from(sheet.cssRules).map((r) => r.cssText).join("\n"); }
-            catch { return ""; }
-          })
-          .join("\n");
+        // Inline-ar computed styles de cada elemento (captura Tailwind/CSS vars)
+        const origElements = contentEl.querySelectorAll("*");
+        const cloneElements = clone.querySelectorAll("*");
+        const importantProps = [
+          "color", "background-color", "background", "font-size", "font-weight",
+          "font-family", "border", "border-radius", "padding", "margin",
+          "display", "flex-direction", "gap", "align-items", "justify-content",
+          "text-align", "line-height", "width", "max-width", "min-width",
+          "border-bottom", "border-top", "border-left", "border-right",
+          "box-shadow", "opacity", "text-transform", "letter-spacing",
+        ];
+        for (let i = 0; i < Math.min(origElements.length, cloneElements.length); i++) {
+          const computed = window.getComputedStyle(origElements[i]);
+          const inlineStyles: string[] = [];
+          for (const prop of importantProps) {
+            const val = computed.getPropertyValue(prop);
+            if (val && val !== "none" && val !== "normal" && val !== "0px" && val !== "auto" && val !== "rgba(0, 0, 0, 0)") {
+              inlineStyles.push(`${prop}:${val}`);
+            }
+          }
+          if (inlineStyles.length > 0) {
+            (cloneElements[i] as HTMLElement).style.cssText += ";" + inlineStyles.join(";");
+          }
+        }
+
+        // CSS mínimo para o PDF (reset + print colors)
+        const styles = `
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body { font-family: 'Inter', system-ui, sans-serif; padding: 24px; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #e2e8f0; padding: 8px; }
+        `;
 
         const fullHtml = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
