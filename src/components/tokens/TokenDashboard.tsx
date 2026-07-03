@@ -55,16 +55,24 @@ export function TokenDashboard({ session }: Props) {
   const [data, setData] = useState<TokenData | null>(null);
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const fetchData = useCallback(async (d: number) => {
     setLoading(true);
+    setError(null);
     try {
       const r = await fetch(`/api/architecture/tokens?days=${d}`, {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      if (r.ok) setData(await r.json());
-    } catch { /* ignore */ }
+      if (r.ok) {
+        setData(await r.json());
+      } else {
+        setError(`Erro ${r.status}: ${r.statusText}`);
+      }
+    } catch (e) {
+      setError(`Falha na conexão: ${e instanceof Error ? e.message : "desconhecido"}`);
+    }
     setLoading(false);
   }, [session.accessToken]);
 
@@ -97,6 +105,12 @@ export function TokenDashboard({ session }: Props) {
       </header>
 
       {loading && <div className="token-loading">Carregando dados...</div>}
+
+      {error && !loading && (
+        <div className="token-loading" style={{ color: "var(--destructive, #dc2626)" }}>
+          {error}
+        </div>
+      )}
 
       {data && !loading && (
         <>

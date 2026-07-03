@@ -3,7 +3,7 @@
  * Aparece no rodapé de cada mensagem do assistente.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { normalizeForExport } from "../lib/openui-normalizer";
+import { normalizeForExport } from "../lib/export-normalizers";
 
 export function MessageExport() {
   const [open, setOpen] = useState(false);
