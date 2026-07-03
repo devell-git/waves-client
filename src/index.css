@@ -993,7 +993,7 @@ a {
 }
 
 /* ===== Message Export ===== */
-.waves-assistant-message {
+.openui-shell-thread-message-assistant__content {
   position: relative;
 }
 

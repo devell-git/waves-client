@@ -342,10 +342,10 @@ function AssistantMessageShell({
 }) {
   return (
     <div className="openui-shell-thread-message-assistant openui-shell-thread-message-assistant--without-logo waves-assistant-message">
-      <div className="msg-export-top">
-        <MessageExport />
-      </div>
       <div className="openui-shell-thread-message-assistant__content">
+        <div className="msg-export-top">
+          <MessageExport />
+        </div>
         {children}
         {meta}
       </div>
