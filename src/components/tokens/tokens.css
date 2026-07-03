@@ -1,0 +1,205 @@
+/* Token Dashboard — admin-only */
+.token-dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+  font-family: var(--font-body, 'Inter', system-ui, sans-serif);
+  color: var(--foreground);
+}
+
+.token-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.token-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.token-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.token-subtitle {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.token-back {
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--foreground);
+}
+
+.token-back:hover { background: var(--accent); }
+
+.token-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.token-filter-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.token-filter-btn:hover { background: var(--accent); }
+.token-filter-btn.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.token-loading {
+  text-align: center;
+  padding: 48px;
+  color: var(--muted-foreground);
+}
+
+/* KPIs */
+.token-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.token-kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.token-kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.token-kpi-label {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* Sections */
+.token-section {
+  margin-bottom: 28px;
+}
+
+.token-section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Table */
+.token-table-wrap {
+  overflow-x: auto;
+}
+
+.token-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.token-table th {
+  background: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+
+.token-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.token-table tbody tr:hover { background: var(--accent); }
+
+.token-rank {
+  font-weight: 700;
+  color: var(--muted-foreground);
+  width: 30px;
+}
+
+.token-profile-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.token-total-cell { font-weight: 600; }
+
+.token-bar-col { width: 120px; }
+
+.token-bar-bg {
+  background: var(--muted);
+  border-radius: 3px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.token-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 3px;
+  min-width: 2px;
+}
+
+/* Model cards */
+.token-model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.token-model-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.token-model-name {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.token-model-stat {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin: 2px 0;
+}

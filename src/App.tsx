@@ -5,6 +5,8 @@ import { ChatPage } from "./components/ChatPage";
 import { LoginPage } from "./components/LoginPage";
 import { ArchitectureExplorer } from "./components/architecture/ArchitectureExplorer";
 import { SOCDashboard } from "./components/soc/SOCDashboard";
+import { TokenDashboard } from "./components/tokens/TokenDashboard";
+import "./components/tokens/tokens.css";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import { isAdminUser } from "./lib/permissions";
 import { fetchTenantBranding } from "./lib/tenant";
@@ -139,6 +141,16 @@ export default function App() {
         element={
           session && isAdminUser(session.roles, session.user.type) ? (
             <SOCDashboard session={session} />
+          ) : (
+            <Navigate to={session ? "/chat" : "/login"} replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/tokens"
+        element={
+          session && isAdminUser(session.roles, session.user.type) ? (
+            <TokenDashboard session={session} />
           ) : (
             <Navigate to={session ? "/chat" : "/login"} replace />
           )

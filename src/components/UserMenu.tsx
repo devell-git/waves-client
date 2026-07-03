@@ -170,6 +170,17 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
             >
               <span className="user-menu-item-label">SOC Dashboard</span>
             </button>
+            <button
+              type="button"
+              className="user-menu-item"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                navigate("/admin/tokens");
+              }}
+            >
+              <span className="user-menu-item-label">Consumo de Tokens</span>
+            </button>
             <div className="user-menu-separator" role="separator" />
             <div className="user-menu-section-label">Tema visual</div>
             {Object.entries(allPresets).map(([key, p]) => (
