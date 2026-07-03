@@ -807,7 +807,7 @@ app.post("/api/export-message", async (req, res) => {
       fs.writeFileSync(tmpHtmlDoc, html || text || "", "utf-8");
 
       // Use html2docx.py (handles inline styles, colors, badges, tables)
-      const html2docxScript = path.join(path.dirname(new URL(import.meta.url).pathname), "html2docx.py");
+      const html2docxScript = path.join(process.cwd(), "server", "html2docx.py");
       if (fs.existsSync(html2docxScript)) {
         execSync(
           `/home/bot/.hermes/hermes-agent/venv/bin/python ${html2docxScript} ${tmpHtmlDoc} ${tmpDocx}`,
