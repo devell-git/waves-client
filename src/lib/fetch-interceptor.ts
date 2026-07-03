@@ -33,42 +33,10 @@ function urlOf(input: RequestInfo | URL): string {
  * o patch no window.fetch é aplicado uma única vez; chamadas seguintes só
  * (re)registram o handler. Retorna um cleanup que desregistra o handler.
  */
-export function installAuthInterceptor(onUnauthorized: () => void): () => void {
-  handler = onUnauthorized;
-  fired = false;
-  if (patched || typeof window === "undefined") {
-    return () => {
-      handler = null;
-    };
-  }
-  patched = true;
-  const orig = window.fetch.bind(window);
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const res = await orig(input, init);
-    try {
-      if (
-        (res.status === 401 || res.status === 403) &&
-        !fired &&
-        handler &&
-        authSensitive(urlOf(input))
-      ) {
-        fired = true;
-        const h = handler;
-        // Não bloqueia a resposta; agenda o logout fora do caminho do fetch.
-        setTimeout(() => {
-          try {
-            h();
-          } catch {
-            /* noop */
-          }
-        }, 0);
-      }
-    } catch {
-      /* nunca quebra o fetch */
-    }
-    return res;
-  };
-  return () => {
-    handler = null;
-  };
+export function installAuthInterceptor(_onUnauthorized: () => void): () => void {
+  // Desabilitado — 401/403 em qualquer /api/* causava logout automático.
+  // Usuários com permissões limitadas (ex: role Workflows sem create-document)
+  // recebiam 403 em chamadas do agente e eram deslogados.
+  // Logout agora é apenas manual (botão Sair).
+  return () => {};
 }
