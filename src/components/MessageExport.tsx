@@ -43,9 +43,21 @@ export function MessageExport({ messageId }: Props) {
     );
     if (!contentEl) return { text: "", html: "" };
 
-    // Clone sem o meta (horário/tokens/export button)
+    // Clone sem meta, follow-ups, e botões de sugestão
     const clone = contentEl.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll(".waves-assistant-message__meta").forEach((el) => el.remove());
+    const removeSelectors = [
+      ".waves-assistant-message__meta",
+      "[class*='follow-up']",
+      "[class*='FollowUp']",
+      "[class*='followup']",
+      "[class*='suggestion']",
+      "[class*='starter']",
+      "button",
+      "[role='button']",
+    ];
+    for (const sel of removeSelectors) {
+      clone.querySelectorAll(sel).forEach((el) => el.remove());
+    }
 
     return {
       text: clone.textContent?.trim() ?? "",

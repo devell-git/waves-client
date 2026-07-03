@@ -732,11 +732,30 @@ app.post("/api/export-message", async (req, res) => {
       const fullHtml = `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 32px; color: #1e293b; line-height: 1.6; max-width: 800px; margin: 0 auto; }
-  h1,h2,h3 { color: #0f172a; } table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-  th,td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
-  th { background: #f1f5f9; } code { background: #f1f5f9; padding: 2px 4px; border-radius: 3px; }
-  pre { background: #f8fafc; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  @page { size: A4; margin: 2cm; }
+  body { font-family: 'Inter', system-ui, sans-serif; padding: 24px; color: #1e293b; line-height: 1.6; max-width: 100%; font-size: 11pt; }
+  h1 { font-size: 20pt; font-weight: 700; color: #0f172a; border-bottom: 2px solid #6366f1; padding-bottom: 6px; }
+  h2 { font-size: 15pt; font-weight: 600; color: #1e40af; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-top: 20px; }
+  h3 { font-size: 12pt; font-weight: 600; color: #334155; margin-top: 16px; }
+  p { margin: 6px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th { background: #f1f5f9; font-weight: 600; font-size: 10pt; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 10px; text-align: left; border: 1px solid #e2e8f0; }
+  td { padding: 8px 10px; border: 1px solid #e2e8f0; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  code { background: #f1f5f9; padding: 2px 4px; border-radius: 3px; font-size: 9pt; }
+  pre { background: #f8fafc; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 9pt; }
+  ul, ol { margin: 6px 0 6px 18px; }
+  li { margin: 3px 0; }
+  strong { color: #0f172a; }
+  blockquote { border-left: 3px solid #6366f1; background: #f0f4ff; padding: 10px 14px; margin: 10px 0; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 16px 0; }
+  /* Cards e badges do OpenUI renderizado */
+  [class*="card"], [class*="Card"] { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 8px 0; }
+  [class*="badge"], [class*="Badge"] { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9pt; font-weight: 600; }
+  [class*="alert"], [class*="Alert"] { padding: 10px 14px; border-radius: 6px; margin: 8px 0; border-left: 4px solid; }
+  /* Checkbox lists */
+  input[type="checkbox"] { margin-right: 6px; }
 </style></head><body>${html || `<pre>${text}</pre>`}</body></html>`;
 
       fs.writeFileSync(tmpHtml, fullHtml);
