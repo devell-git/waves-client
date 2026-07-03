@@ -806,6 +806,23 @@ app.post("/api/export-message", async (req, res) => {
       // Write HTML content
       fs.writeFileSync(tmpHtmlDoc, html || text || "", "utf-8");
 
+      // Use html2docx.py (handles inline styles, colors, badges, tables)
+      const html2docxScript = path.join(path.dirname(new URL(import.meta.url).pathname), "html2docx.py");
+      if (fs.existsSync(html2docxScript)) {
+        execSync(
+          `/home/bot/.hermes/hermes-agent/venv/bin/python ${html2docxScript} ${tmpHtmlDoc} ${tmpDocx}`,
+          { timeout: 15000 },
+        );
+        if (fs.existsSync(tmpDocx)) {
+          res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+          res.setHeader("Content-Disposition", "attachment; filename=mensagem.docx");
+          res.send(fs.readFileSync(tmpDocx));
+          try { fs.unlinkSync(tmpHtmlDoc); fs.unlinkSync(tmpDocx); } catch {}
+          return;
+        }
+      }
+
+      // Fallback: inline script
       const pyScript = `
 import sys, re
 from pathlib import Path
