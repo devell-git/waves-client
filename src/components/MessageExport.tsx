@@ -4,12 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface Props {
-  /** Conteúdo da mensagem (texto ou HTML renderizado) */
-  messageId?: string;
-}
-
-export function MessageExport({ messageId }: Props) {
+export function MessageExport() {
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -30,57 +25,55 @@ export function MessageExport({ messageId }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const getMessageContent = useCallback((): { text: string; html: string } => {
-    // Busca o conteúdo renderizado da mensagem mais próxima
-    const btn = btnRef.current;
-    if (!btn) return { text: "", html: "" };
-
-    const msgEl = btn.closest(".waves-assistant-message");
-    if (!msgEl) return { text: "", html: "" };
-
-    const contentEl = msgEl.querySelector(
-      ".openui-shell-thread-message-assistant__content",
-    );
-    if (!contentEl) return { text: "", html: "" };
-
-    // Clone sem meta, follow-ups, e botões de sugestão
-    const clone = contentEl.cloneNode(true) as HTMLElement;
-    const removeSelectors = [
-      ".waves-assistant-message__meta",
-      "[class*='follow-up']",
-      "[class*='FollowUp']",
-      "[class*='followup']",
-      "[class*='suggestion']",
-      "[class*='starter']",
-      "button",
-      "[role='button']",
-    ];
-    for (const sel of removeSelectors) {
-      clone.querySelectorAll(sel).forEach((el) => el.remove());
-    }
-
-    return {
-      text: clone.textContent?.trim() ?? "",
-      html: clone.innerHTML,
-    };
-  }, []);
-
   const exportAs = useCallback(
     async (format: "pdf" | "docx") => {
       setExporting(true);
       setOpen(false);
 
-      const { text, html } = getMessageContent();
-      if (!text && !html) {
-        setExporting(false);
-        return;
-      }
+      const btn = btnRef.current;
+      if (!btn) { setExporting(false); return; }
+
+      const msgEl = btn.closest(".waves-assistant-message");
+      if (!msgEl) { setExporting(false); return; }
+
+      const contentEl = msgEl.querySelector(
+        ".openui-shell-thread-message-assistant__content",
+      ) as HTMLElement | null;
+      if (!contentEl) { setExporting(false); return; }
 
       try {
+        // Captura o HTML renderizado COM estilos computados (cores, backgrounds, tudo)
+        const clone = contentEl.cloneNode(true) as HTMLElement;
+        // Remover meta e botões
+        clone.querySelectorAll(".waves-assistant-message__meta, .msg-export-top, .msg-export-wrap, button, [role='button']").forEach((el) => el.remove());
+        // Remover follow-ups
+        clone.querySelectorAll("[class*='follow-up'], [class*='FollowUp'], [class*='followup'], [class*='suggestion']").forEach((el) => el.remove());
+
+        // Capturar os estilos computados e inline-ar
+        const styles = Array.from(document.styleSheets)
+          .map((sheet) => {
+            try { return Array.from(sheet.cssRules).map((r) => r.cssText).join("\n"); }
+            catch { return ""; }
+          })
+          .join("\n");
+
+        const fullHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+${styles}
+body { padding: 24px; background: white; }
+/* Force print-friendly */
+* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+</style></head>
+<body data-theme="${document.body.getAttribute("data-theme") || "light"}">
+<div class="openui-shell-thread-message-assistant__content">
+${clone.innerHTML}
+</div></body></html>`;
+
         const response = await fetch("/api/export-message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ format, html, text, messageId }),
+          body: JSON.stringify({ format, html: fullHtml, text: clone.textContent?.trim() ?? "" }),
         });
 
         if (!response.ok) {
@@ -93,7 +86,7 @@ export function MessageExport({ messageId }: Props) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `mensagem${messageId ? `-${messageId.slice(0, 8)}` : ""}.${format}`;
+        a.download = `mensagem.${format}`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -103,7 +96,7 @@ export function MessageExport({ messageId }: Props) {
       }
       setExporting(false);
     },
-    [getMessageContent, messageId],
+    [],
   );
 
   return (
