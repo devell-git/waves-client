@@ -812,6 +812,31 @@ a {
 .openui-shell-sidebar-user-footer {
   flex-shrink: 0;
   margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  background: var(--background, #fff);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 5;
+}
+
+/* Garantir que o sidebar container tenha overflow correto */
+.openui-shell-sidebar-container {
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+/* O conteúdo do sidebar (threads) scrolla, o footer fica fixo */
+.openui-shell-sidebar-container--with-user-footer {
+  overflow: hidden !important;
+}
+
+.openui-shell-sidebar-container--with-user-footer > *:not([data-user-footer]) {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Quando o sidebar tá colapsado, mostra só o avatar */
