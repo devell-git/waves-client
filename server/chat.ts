@@ -608,6 +608,8 @@ interface AttachmentPayload {
   size: number;
   url: string;
   path: string;
+  /** Caminho do content.txt (texto extraído salvo em disco, leitura sob demanda). */
+  contentPath?: string;
   text?: string;
   truncated?: boolean;
   error?: string;
@@ -671,10 +673,10 @@ function injectAttachments(
 ): void {
   if (!attachments?.length) return;
 
-  // 1. Parte textual (texto extraído + notas dos anexos).
+  // 1. Parte textual (referência aos anexos — texto NÃO é injetado inline).
   const blocks: string[] = [
     "<arquivos_anexados>",
-    "O usuário anexou os arquivos abaixo. Use o conteúdo (texto extraído e/ou imagens) como contexto. Não invente dados que não estejam aqui.",
+    "O usuário anexou os arquivos abaixo. Para acessar o conteúdo, LEIA o arquivo indicado em `content_path` usando a file tool (read_file). Não invente dados — leia o arquivo primeiro.",
     "",
   ];
   // 2. Partes de imagem (image_url) acumuladas.
@@ -682,7 +684,17 @@ function injectAttachments(
 
   for (const a of attachments) {
     const head = `### ${a.filename} (${a.mimeType} · ${formatBytesServer(a.size)})`;
-    if (a.text && a.text.trim()) {
+    if (a.contentPath) {
+      // Texto extraído salvo em disco — agente lê sob demanda via file tool.
+      // NÃO injeta o texto no contexto (evita overflow com arquivos grandes).
+      blocks.push(head);
+      blocks.push(`content_path: ${a.contentPath}`);
+      blocks.push(`original_path: ${a.path}`);
+      blocks.push(`url: ${fileRef(a)}`);
+      blocks.push(a.truncated ? "(texto extraído foi truncado — arquivo original tem mais conteúdo)" : "");
+      blocks.push("");
+    } else if (a.text && a.text.trim()) {
+      // Fallback: texto pequeno sem contentPath (uploads antigos) — injeta inline.
       blocks.push(head);
       blocks.push(a.truncated ? "Conteúdo extraído (truncado):" : "Conteúdo extraído:");
       blocks.push('"""', a.text.trim(), '"""', "");
@@ -1470,56 +1482,6 @@ interface HandleHermesOptions {
 const OPENUI_HINT_RE =
   /\b(root\s*=|Card\s*\(|CardHeader\s*\(|Kanban\s*\(|Table\s*\(|TagBlock\s*\(|BarChart\s*\(|PieChart\s*\(|ListBlock\s*\(|Steps\s*\(|FollowUpBlock\s*\()/;
 
-/**
- * Comprime blocos `<arquivos_anexados>` em mensagens user ANTIGAS (não a última).
- *
- * O texto extraído do arquivo (PDF/DOCX/XLSX) é injetado na mensagem do turno
- * em que foi anexado. Sem compressão, esse texto (pode ser 100k+ chars) é
- * re-enviado em TODOS os turnos seguintes como parte do histórico, inflando o
- * contexto até estourar o limite do modelo.
- *
- * Solução: nas mensagens user que NÃO são a última, substitui o bloco
- * `<arquivos_anexados>…</arquivos_anexados>` por um resumo curto
- * (nomes dos arquivos + nota de que o conteúdo está disponível sob demanda).
- */
-function compressOldAttachments(
-  msgs: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  // Acha o índice da ÚLTIMA mensagem user (é a que tem o contexto fresco).
-  let lastUserIdx = -1;
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === "user") { lastUserIdx = i; break; }
-  }
-  const ATTACH_RE = /<arquivos_anexados>[\s\S]*?<\/arquivos_anexados>/;
-  const FILENAME_RE = /### (.+?) \(/g;
-  return msgs.map((m, i) => {
-    if (m.role !== "user" || i === lastUserIdx) return m;
-    const c = m.content;
-    if (typeof c === "string" && ATTACH_RE.test(c)) {
-      const filenames = [...c.matchAll(FILENAME_RE)].map((x) => x[1]);
-      const summary = filenames.length
-        ? `[Arquivos anexados anteriormente: ${filenames.join(", ")} — conteúdo omitido do histórico para economia de contexto. O agente pode recuperar o arquivo via URL assinada se necessário.]`
-        : "[Arquivos anexados anteriormente — conteúdo omitido do histórico para economia de contexto.]";
-      return { ...m, content: c.replace(ATTACH_RE, summary) };
-    }
-    if (Array.isArray(c)) {
-      const parts = c as Array<Record<string, unknown>>;
-      const newParts = parts.map((p) => {
-        if (p.type === "text" && typeof p.text === "string" && ATTACH_RE.test(p.text)) {
-          const filenames = [...p.text.matchAll(FILENAME_RE)].map((x) => x[1]);
-          const summary = filenames.length
-            ? `[Arquivos anexados anteriormente: ${filenames.join(", ")} — conteúdo omitido do histórico.]`
-            : "[Arquivos anexados anteriormente — conteúdo omitido do histórico.]";
-          return { ...p, text: p.text.replace(ATTACH_RE, summary) };
-        }
-        return p;
-      });
-      return { ...m, content: newParts };
-    }
-    return m;
-  });
-}
-
 function truncateOldAssistantUI(
   msgs: Array<Record<string, unknown>>,
   keepLast = 1,
@@ -1573,7 +1535,7 @@ async function handleChatRequestHermes(
   const toolsHint = "";
 
   // 2. Limpa mensagens
-  const cleanMessages = compressOldAttachments(truncateOldAssistantUI(
+  const cleanMessages = truncateOldAssistantUI(
     (messages as Array<Record<string, unknown>>)
       .filter((m) => m.role !== "tool")
       .map((m) => {
@@ -1583,7 +1545,7 @@ async function handleChatRequestHermes(
         }
         return m;
       }),
-  ));
+  );
 
   // 3. Examples dinâmicos: kanban/funnel renderizados com DADOS REAIS do user.
   //    Steve vê estrutura com ids/nomes próprios → copia padrão natural em vez

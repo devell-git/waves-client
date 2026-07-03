@@ -159,6 +159,8 @@ export interface UploadedFileMeta {
   url: string;
   /** Caminho absoluto no disco — referência pro agente abrir via skill. */
   path: string;
+  /** Caminho do content.txt (texto extraído salvo em disco, leitura sob demanda). */
+  contentPath?: string;
   text?: string;
   truncated?: boolean;
   error?: string;
@@ -212,6 +214,13 @@ uploadsRouter.post("/", (req, _res, next) => {
     const kind = classify(f.mimetype || "", ext);
     const { text, truncated, error } = await extractText(f.buffer, kind);
 
+    // Salva o texto extraído em content.txt — o agente lê sob demanda via file
+    // tool, sem injetar no contexto do chat (evita overflow em arquivos grandes).
+    const contentPath = resolve(dir, "content.txt");
+    if (text && text.trim()) {
+      writeFileSync(contentPath, text.trim(), "utf-8");
+    }
+
     const meta: UploadMeta = {
       tenant,
       owner,
@@ -233,6 +242,7 @@ uploadsRouter.post("/", (req, _res, next) => {
       kind,
       url: `/api/uploads/${id}?o=${owner}&s=${sig}`,
       path: fullPath,
+      contentPath: text?.trim() ? contentPath : undefined,
       text,
       truncated,
       error,
