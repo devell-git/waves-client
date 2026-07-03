@@ -3,6 +3,7 @@
  * Aparece no rodapé de cada mensagem do assistente.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { normalizeForExport } from "../lib/openui-normalizer";
 
 export function MessageExport() {
   const [open, setOpen] = useState(false);
@@ -78,6 +79,9 @@ export function MessageExport() {
             (cloneElements[i] as HTMLElement).style.cssText += ";" + inlineStyles.join(";");
           }
         }
+
+        // Normalizar OpenUI → HTML semântico (KPIs→table, cards→sections, etc.)
+        normalizeForExport(clone);
 
         // CSS mínimo para o PDF (reset + print colors)
         const styles = `
