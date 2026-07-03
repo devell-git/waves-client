@@ -342,6 +342,9 @@ function AssistantMessageShell({
 }) {
   return (
     <div className="openui-shell-thread-message-assistant openui-shell-thread-message-assistant--without-logo waves-assistant-message">
+      <div className="msg-export-top">
+        <MessageExport />
+      </div>
       <div className="openui-shell-thread-message-assistant__content">
         {children}
         {meta}
@@ -369,7 +372,6 @@ function MessageMeta({
           🪙 {usage ? `${usage.t} tok · P:${usage.p}/C:${usage.c}` : "0 tok"}
         </span>
       )}
-      <MessageExport messageId={id} />
     </div>
   );
 }

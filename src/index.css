@@ -993,43 +993,54 @@ a {
 }
 
 /* ===== Message Export ===== */
+.waves-assistant-message {
+  position: relative;
+}
+
+.msg-export-top {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.waves-assistant-message:hover .msg-export-top {
+  opacity: 1;
+}
+
 .msg-export-wrap {
   position: relative;
   display: inline-flex;
-  margin-left: 6px;
 }
 
 .msg-export-btn {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
-  padding: 1px 5px;
+  font-size: 14px;
+  padding: 3px 7px;
   color: var(--muted-foreground);
-  opacity: 0.5;
-  transition: opacity 0.15s, border-color 0.15s;
-}
-
-.waves-assistant-message:hover .msg-export-btn {
-  opacity: 1;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
 }
 
 .msg-export-btn:hover {
-  opacity: 1;
-  border-color: var(--border);
-  background: var(--secondary);
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .msg-export-menu {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   right: 0;
-  margin-bottom: 4px;
+  margin-top: 4px;
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   z-index: 50;
   display: flex;
   flex-direction: column;
@@ -1040,11 +1051,12 @@ a {
 .msg-export-option {
   background: none;
   border: none;
-  padding: 6px 12px;
+  padding: 8px 14px;
   text-align: left;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--foreground);
+  font-weight: 500;
 }
 
 .msg-export-option:hover {
