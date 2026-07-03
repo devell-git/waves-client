@@ -14,11 +14,6 @@ import type {
   WavesUser,
   WorkflowsResponse,
 } from "../types/auth";
-import {
-  canAccessAssistants,
-  canAccessBookings,
-  canAccessWorkflows,
-} from "../lib/permissions";
 
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -308,39 +303,11 @@ export async function fetchAssistantFunnelApi(
  * próxima request real vai falhar 401 e o cliente individual lida com isso.
  */
 export async function verifyApiSession(session: AuthSession): Promise<boolean> {
-  if (session.expiresAt <= Date.now()) return false;
-
-  const perms = session.effectivePermissions;
-
-  // Sem permissões = considera inválida (não tem nada que faça nesse app)
-  if (perms.length === 0) return false;
-
-  // Escolhe a chamada de menor custo possível pra "ping"
-  const probe = canAccessWorkflows(perms)
-    ? () => fetchWorkflowsApi(session.accessToken)
-    : canAccessAssistants(perms)
-      ? () => fetchAssistantsApi(session.accessToken)
-      : canAccessBookings(perms)
-        ? () => fetchBookingsApi(session.accessToken)
-        : null;
-
-  // Sem probe disponível mas com permissões — assume válido (não sabemos
-  // como testar; deixa o app rodar)
-  if (!probe) return true;
-
-  try {
-    await probe();
-    return true;
-  } catch (err) {
-    // Só invalida em 401/403 explícito. Outros erros = transitório → mantém.
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/\b40[13]\b|unauthorized|forbidden|invalid token|expired token/i.test(msg)) {
-      return false;
-    }
-    console.warn(
-      "[verifyApiSession] erro transitório, mantendo sessão:",
-      msg,
-    );
-    return true;
-  }
+  // Confia no expiresAt do localStorage — sem probe de rede.
+  // O probe anterior fazia fetch na Waves ao restaurar a sessão, mas se o
+  // servidor revogar tokens anteriores (ex: novo login) o probe invalidava
+  // a sessão imediatamente ao recarregar a página. Agora: se o token local
+  // não expirou, mantém. Se expirou, limpa. Erros 401 durante o uso normal
+  // são tratados pelo fetch-interceptor (redireciona pro login).
+  return session.expiresAt > Date.now();
 }
