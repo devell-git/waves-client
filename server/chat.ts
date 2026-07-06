@@ -676,7 +676,7 @@ function injectAttachments(
   // 1. Parte textual (referência aos anexos — texto NÃO é injetado inline).
   const blocks: string[] = [
     "<arquivos_anexados>",
-    "O usuário anexou os arquivos abaixo. Para acessar o conteúdo, LEIA o arquivo indicado em `content_path` usando a file tool (read_file). Não invente dados — leia o arquivo primeiro.",
+    "O usuário anexou os arquivos abaixo. O conteúdo extraído está incluído inline quando disponível. Não invente dados — use apenas o que está abaixo.",
     "",
   ];
   // 2. Partes de imagem (image_url) acumuladas.
@@ -684,20 +684,21 @@ function injectAttachments(
 
   for (const a of attachments) {
     const head = `### ${a.filename} (${a.mimeType} · ${formatBytesServer(a.size)})`;
-    if (a.contentPath) {
-      // Texto extraído salvo em disco — agente lê sob demanda via file tool.
-      // NÃO injeta o texto no contexto (evita overflow com arquivos grandes).
+    if (a.text && a.text.trim()) {
+      // Texto extraído disponível — injeta inline no contexto (funciona com
+      // qualquer agente, sem depender de file tool). O MAX_TEXT_CHARS (20k)
+      // já limita na extração; overflow não é risco real.
+      blocks.push(head);
+      blocks.push(a.truncated ? "Conteúdo extraído (truncado):" : "Conteúdo extraído:");
+      blocks.push('"""', a.text.trim(), '"""', "");
+    } else if (a.contentPath) {
+      // Sem texto em memória mas tem contentPath — fallback para file tool.
       blocks.push(head);
       blocks.push(`content_path: ${a.contentPath}`);
       blocks.push(`original_path: ${a.path}`);
       blocks.push(`url: ${fileRef(a)}`);
       blocks.push(a.truncated ? "(texto extraído foi truncado — arquivo original tem mais conteúdo)" : "");
       blocks.push("");
-    } else if (a.text && a.text.trim()) {
-      // Fallback: texto pequeno sem contentPath (uploads antigos) — injeta inline.
-      blocks.push(head);
-      blocks.push(a.truncated ? "Conteúdo extraído (truncado):" : "Conteúdo extraído:");
-      blocks.push('"""', a.text.trim(), '"""', "");
     } else if (a.kind === "image") {
       const dataUri = imageToDataUri(a);
       if (dataUri) {
