@@ -1012,9 +1012,8 @@ a {
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
-  background: var(--secondary);
-  border: 1px solid var(--border);
-
+  background: transparent;
+  border: none;
 }
 
 .msg-action-btn {
@@ -2505,6 +2504,13 @@ a {
   opacity: 0.5;
   margin-top: 0.35rem;
   padding: 0;
+}
+
+.waves-meta-debug {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  opacity: 0.6;
+  cursor: help;
 }
 
 /* Horário do USUÁRIO padronizado com o do agente: FORA da bolha (abaixo),

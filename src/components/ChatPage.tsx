@@ -18,7 +18,7 @@ import { Renderer } from "@openuidev/react-lang";
 // substitui o openuiChatLibrary built-in pra ter UI mais polida no chat.
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
 import { AnalysisReport } from "../lib/shadcn-genui/components/analysis-report";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { UserMessageView } from "./UserMessageView";
 import { MessageExport } from "./MessageExport";
@@ -364,12 +364,18 @@ function MessageMeta({
   timestamp?: number;
   usage: ReturnType<typeof extractUsage>["usage"];
 }) {
+  const threadId = useContext(ActiveThreadContext);
   return (
     <div className="waves-assistant-message__meta">
       <span>{fmtTime(messageTime(id, timestamp))}</span>
       {isAdmin() && (
         <span title="Tokens da geração (P=prompt, C=completion)">
           🪙 {usage ? `${usage.t} tok · P:${usage.p}/C:${usage.c}` : "0 tok"}
+        </span>
+      )}
+      {isAdmin() && (
+        <span className="waves-meta-debug" title={`Thread: ${threadId}\nMsg: ${id || "—"}`}>
+          🧵 {threadId?.slice(0, 8)} · #{id?.slice(0, 8) || "—"}
         </span>
       )}
     </div>
