@@ -3,7 +3,7 @@
  * Aparece no canto superior direito de cada mensagem do assistente.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Copy, Check, Maximize2, Minimize2 } from "lucide-react";
+import { Download, Copy, Check, Maximize2, X } from "lucide-react";
 import { normalizeForExport } from "../lib/export-normalizers";
 
 const PdfIcon = () => (
@@ -20,11 +20,20 @@ const WordIcon = () => (
   </svg>
 );
 
+/** Resolve o contentEl a partir de qualquer elemento dentro da mensagem */
+function findContentEl(el: HTMLElement): HTMLElement | null {
+  const msg = el.closest(".waves-assistant-message");
+  if (!msg) return null;
+  return msg.querySelector(".openui-shell-thread-message-assistant__content") as HTMLElement | null;
+}
+
 export function MessageExport() {
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const barRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
 
   // Fecha o menu ao clicar fora
   useEffect(() => {
@@ -32,7 +41,7 @@ export function MessageExport() {
     const handler = (e: MouseEvent) => {
       if (
         menuRef.current?.contains(e.target as Node) ||
-        btnRef.current?.contains(e.target as Node)
+        barRef.current?.contains(e.target as Node)
       )
         return;
       setOpen(false);
@@ -46,31 +55,21 @@ export function MessageExport() {
       setExporting(true);
       setOpen(false);
 
-      const btn = btnRef.current;
-      if (!btn) { setExporting(false); return; }
+      const bar = barRef.current;
+      if (!bar) { setExporting(false); return; }
 
-      const msgEl = btn.closest(".waves-assistant-message");
-      if (!msgEl) { setExporting(false); return; }
-
-      const contentEl = msgEl.querySelector(
-        ".openui-shell-thread-message-assistant__content",
-      ) as HTMLElement | null;
+      const contentEl = findContentEl(bar);
       if (!contentEl) { setExporting(false); return; }
 
       try {
-        // Captura o HTML renderizado COM estilos computados (cores, backgrounds, tudo)
         const clone = contentEl.cloneNode(true) as HTMLElement;
-        // Remover meta e botões
-        clone.querySelectorAll(".waves-assistant-message__meta, .msg-export-top, .msg-export-wrap, button, [role='button']").forEach((el) => el.remove());
-        // Remover follow-ups
+        clone.querySelectorAll(".waves-assistant-message__meta, .msg-actions-top, .msg-actions-bar, .msg-expand-close, .msg-export-wrap, button, [role='button']").forEach((el) => el.remove());
         clone.querySelectorAll("[class*='follow-up'], [class*='FollowUp'], [class*='followup'], [class*='suggestion']").forEach((el) => el.remove());
 
-        // Todos os colapsáveis: forçar aberto (exportar conteúdo completo)
         clone.querySelectorAll("details").forEach((det) => {
           det.setAttribute("open", "");
         });
 
-        // Inline-ar computed styles de cada elemento (captura Tailwind/CSS vars)
         const origElements = contentEl.querySelectorAll("*");
         const cloneElements = clone.querySelectorAll("*");
         const importantProps = [
@@ -95,10 +94,8 @@ export function MessageExport() {
           }
         }
 
-        // Normalizar OpenUI → HTML semântico (KPIs→table, cards→sections, etc.)
         normalizeForExport(clone);
 
-        // CSS mínimo para o PDF (reset + print colors)
         const styles = `
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           body { font-family: 'Inter', system-ui, sans-serif; padding: 24px; }
@@ -111,7 +108,6 @@ export function MessageExport() {
 <style>
 ${styles}
 body { padding: 24px; background: white; }
-/* Force print-friendly */
 * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
 </style></head>
 <body data-theme="${document.body.getAttribute("data-theme") || "light"}">
@@ -148,25 +144,16 @@ ${clone.innerHTML}
     [],
   );
 
-  const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-
   const handleCopy = useCallback(() => {
-    const btn = btnRef.current;
-    if (!btn) return;
-    const msgEl = btn.closest(".waves-assistant-message");
-    if (!msgEl) return;
-    const contentEl = msgEl.querySelector(
-      ".openui-shell-thread-message-assistant__content",
-    ) as HTMLElement | null;
+    const bar = barRef.current;
+    if (!bar) return;
+    const contentEl = findContentEl(bar);
     if (!contentEl) return;
 
-    // Clone and normalize (same pipeline as export)
     const clone = contentEl.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll(".msg-actions-bar, .msg-actions-top, .msg-export-top, .msg-expand-close, .waves-assistant-message__meta, button, [role='button']").forEach((el) => el.remove());
+    clone.querySelectorAll(".msg-actions-bar, .msg-actions-top, .msg-expand-close, .waves-assistant-message__meta, button, [role='button']").forEach((el) => el.remove());
     clone.querySelectorAll("[class*='follow-up'], [class*='FollowUp'], [class*='followup'], [class*='suggestion']").forEach((el) => el.remove());
 
-    // Inline computed styles (same as export)
     const origElements = contentEl.querySelectorAll("*");
     const cloneElements = clone.querySelectorAll("*");
     const importantProps = [
@@ -187,26 +174,19 @@ ${clone.innerHTML}
       }
     }
 
-    // Normalize OpenUI components to semantic HTML
     normalizeForExport(clone);
 
-    // Copy as rich text (HTML) + plain text fallback
     const html = clone.innerHTML;
     const text = clone.textContent?.trim() ?? "";
-
     const htmlBlob = new Blob([html], { type: "text/html" });
     const textBlob = new Blob([text], { type: "text/plain" });
 
     navigator.clipboard.write([
-      new ClipboardItem({
-        "text/html": htmlBlob,
-        "text/plain": textBlob,
-      }),
+      new ClipboardItem({ "text/html": htmlBlob, "text/plain": textBlob }),
     ]).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }).catch(() => {
-      // Fallback: plain text only
       navigator.clipboard.writeText(text).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -215,27 +195,23 @@ ${clone.innerHTML}
   }, []);
 
   const handleExpand = useCallback(() => {
-    const btn = btnRef.current;
-    if (!btn) return;
-    const msgEl = btn.closest(".waves-assistant-message");
-    if (!msgEl) return;
-    const contentEl = msgEl.querySelector(
-      ".openui-shell-thread-message-assistant__content",
-    ) as HTMLElement | null;
+    const bar = barRef.current;
+    if (!bar) return;
+    const contentEl = findContentEl(bar);
     if (!contentEl) return;
 
-    if (expanded) {
+    const isExpanded = contentEl.classList.contains("msg-expanded");
+    if (isExpanded) {
       contentEl.classList.remove("msg-expanded");
-      // Remove close button
       contentEl.querySelector(".msg-expand-close")?.remove();
       setExpanded(false);
     } else {
       contentEl.classList.add("msg-expanded");
-      // Add close (X) button at top-right of expanded view
       const closeBtn = document.createElement("button");
       closeBtn.className = "msg-expand-close";
-      closeBtn.innerHTML = "✕";
       closeBtn.title = "Fechar";
+      closeBtn.setAttribute("aria-label", "Fechar");
+      closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
       closeBtn.onclick = () => {
         contentEl.classList.remove("msg-expanded");
         closeBtn.remove();
@@ -244,10 +220,10 @@ ${clone.innerHTML}
       contentEl.prepend(closeBtn);
       setExpanded(true);
     }
-  }, [expanded]);
+  }, []);
 
   return (
-    <span className="msg-actions-bar">
+    <span className="msg-actions-bar" ref={barRef}>
       {/* Copy */}
       <button
         type="button"
@@ -267,12 +243,11 @@ ${clone.innerHTML}
         title={expanded ? "Recolher" : "Expandir"}
         aria-label={expanded ? "Recolher" : "Expandir"}
       >
-        {expanded ? <Minimize2 size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
+        {expanded ? <X size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
       </button>
 
       {/* Download */}
       <button
-        ref={btnRef}
         type="button"
         className="msg-action-btn"
         onClick={() => setOpen((v) => !v)}
