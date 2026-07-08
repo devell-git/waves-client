@@ -997,33 +997,108 @@ a {
   position: relative;
 }
 
-.msg-export-top {
+.msg-export-top,
+.msg-actions-top {
   position: absolute;
   top: 6px;
   right: 6px;
   z-index: 10;
 }
 
-.msg-export-wrap {
+.msg-actions-bar {
   position: relative;
   display: inline-flex;
-}
-
-.msg-export-btn {
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
   background: var(--secondary);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 3px 7px;
-  color: var(--muted-foreground);
-  transition: background 0.15s, color 0.15s;
-  line-height: 1;
+
 }
 
-.msg-export-btn:hover {
+.msg-action-btn {
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 5px;
+  color: var(--muted-foreground);
+  transition: background 0.12s, color 0.12s;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msg-action-btn:hover {
   background: var(--accent);
   color: var(--foreground);
+}
+
+.msg-action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Expanded message — fills the main content area, respects sidebar */
+.msg-expanded {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 50 !important;
+  background: var(--background) !important;
+  overflow: auto !important;
+  padding: 32px 48px !important;
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.msg-expanded .msg-actions-bar {
+  position: sticky;
+  top: 8px;
+  float: right;
+  z-index: 51;
+}
+
+.msg-expand-close {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 52;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.msg-expand-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.msg-export-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--muted-foreground);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: msg-export-spin 0.6s linear infinite;
+}
+
+@keyframes msg-export-spin {
+  to { transform: rotate(360deg); }
 }
 
 .msg-export-menu {
@@ -1033,24 +1108,30 @@ a {
   margin-top: 4px;
   background: var(--popover);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
   z-index: 50;
   display: flex;
   flex-direction: column;
-  min-width: 80px;
+  min-width: 130px;
   overflow: hidden;
+  padding: 4px;
 }
 
 .msg-export-option {
   background: none;
   border: none;
-  padding: 8px 14px;
+  padding: 8px 12px;
   text-align: left;
   cursor: pointer;
   font-size: 13px;
   color: var(--foreground);
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 5px;
+  transition: background 0.12s;
 }
 
 .msg-export-option:hover {
@@ -1778,15 +1859,24 @@ a {
   border-radius: 0;
 }
 
-/* Esconder logo + "Agent" do header do sidebar do openui-shell.
-   Mantemos só o botão de toggle (panel-left-close). */
+/* Sidebar header: esconder logo + nome, manter só o toggle (panel-left-close).
+   Compactar ao máximo pra não empurrar o "Nova conversa" pra baixo. */
 .openui-shell-sidebar-header__logo,
 .openui-shell-sidebar-header__agent-name {
   display: none !important;
 }
 
+.openui-shell-sidebar-header {
+  flex: 0 0 auto !important;
+  padding: 0.25rem 0.5rem 0 !important;
+  min-height: 0 !important;
+  max-height: fit-content !important;
+}
+
 .openui-shell-sidebar-header__top-row {
   justify-content: flex-end;
+  padding: 0 !important;
+  min-height: 0 !important;
 }
 
 /* Quando o WelcomeScreen está visível EM DESKTOP, ele já contém o
@@ -1909,9 +1999,9 @@ a {
 
 /* Shell.SidebarContent fica VAZIO (a lista de conversas é nosso painel) — sem
    isto ele teria flex:1 e roubaria metade da altura do painel. */
-.openui-shell-sidebar-content:empty {
-  flex: 0 0 auto;
-  min-height: 0;
+.openui-shell-sidebar-content:empty,
+.openui-shell-sidebar-content {
+  display: none !important;
 }
 
 .thread-history-list {

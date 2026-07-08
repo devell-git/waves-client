@@ -343,7 +343,7 @@ function AssistantMessageShell({
   return (
     <div className="openui-shell-thread-message-assistant openui-shell-thread-message-assistant--without-logo waves-assistant-message">
       <div className="openui-shell-thread-message-assistant__content">
-        <div className="msg-export-top">
+        <div className="msg-actions-top">
           <MessageExport />
         </div>
         {children}
