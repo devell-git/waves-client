@@ -1062,10 +1062,18 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
   const lsThreadKey = (profile: string) => `waves-thread-${tenantId}-${profile}`;
   const threadKeyPrefix = `waves-${tenantId}-user-${session.user.id}::`;
 
-  // Thread atual (conversa). Persistida por (tenant, profile) em localStorage.
+  // Thread atual (conversa). Prioridade: sessionStorage (por aba) > localStorage (entre abas).
+  // sessionStorage isola cada aba — duas abas do mesmo perfil NÃO interferem uma na outra.
+  // localStorage fica como backup pra restaurar ao reabrir a aba.
+  const ssThreadKey = (profile: string) => `waves-tab-thread-${tenantId}-${profile}`;
   const [activeThreadId, setActiveThreadId] = useState<string>(() => {
     if (typeof window === "undefined") return newThreadId();
-    const stored = window.localStorage.getItem(lsThreadKey(loadActiveProfileId()));
+    const profileId = loadActiveProfileId();
+    // 1. sessionStorage da aba atual (isolado por aba)
+    const tabStored = window.sessionStorage.getItem(ssThreadKey(profileId));
+    if (tabStored) return tabStored;
+    // 2. localStorage (compartilhado — fallback ao abrir aba nova)
+    const stored = window.localStorage.getItem(lsThreadKey(profileId));
     return stored || newThreadId();
   });
 
@@ -1077,6 +1085,8 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // Persiste em AMBOS: sessionStorage (isolado por aba) + localStorage (backup)
+      window.sessionStorage.setItem(ssThreadKey(activeProfile), activeThreadId);
       window.localStorage.setItem(lsThreadKey(activeProfile), activeThreadId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1134,7 +1144,9 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     setActiveProfile(id);
     saveActiveProfileId(id);
     if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem(lsThreadKey(id));
+      // Prioridade: sessionStorage (aba) > localStorage (backup)
+      const tabStored = window.sessionStorage.getItem(ssThreadKey(id));
+      const stored = tabStored || window.localStorage.getItem(lsThreadKey(id));
       setActiveThreadId(stored || newThreadId());
     }
   };
