@@ -518,7 +518,9 @@ function GenUIAssistantMessage({
           const url = typeof rawUrl === "string" ? rawUrl : "";
           const safe =
             /^\/[^/]/.test(url) ||
-            /^https:\/\/([a-z0-9-]+\.)*devell\.com\.br(\/|$)/i.test(url);
+            /^https:\/\/([a-z0-9-]+\.)*devell\.com\.br(\/|$)/i.test(url) ||
+            /^https:\/\/secure\.d4sign\.com\.br(\/|$)/i.test(url) ||
+            /^https:\/\/teams\.microsoft\.com(\/|$)/i.test(url);
           if (safe) {
             window.open(url, "_blank", "noopener,noreferrer");
           } else if (url) {
