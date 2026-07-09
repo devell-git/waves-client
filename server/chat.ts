@@ -41,6 +41,8 @@ import {
   loadOpenUISpec,
 } from "./openui-spec.js";
 import { getActiveTenant } from "./tenants.js";
+import { isOwnedUploadPath } from "./uploads.js";
+import { verifyUpload } from "./signed-url.js";
 import { buildDynamicExamples } from "./dynamic-examples.js";
 import { getDemoReport } from "./demo-reports.js";
 import {
@@ -667,6 +669,58 @@ function fileRef(a: AttachmentPayload): string {
   return `${PUBLIC_BASE_URL}${a.url}`;
 }
 
+/**
+ * Deriva o `owner` de um anexo a partir da sua URL assinada
+ * (`/api/uploads/<id>?o=<owner>&s=<sig>`), verificando o HMAC contra o tenant
+ * ativo. Retorna o owner (string) só se a assinatura confere — provando que o
+ * upload foi emitido por este servidor pra este tenant. `null` caso contrário
+ * (URL legada sem assinatura, forjada, ou de outro tenant).
+ */
+function ownerFromSignedUrl(url: string | undefined, tenantId: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url, "http://local");
+    const m = u.pathname.match(/\/api\/uploads\/([a-f0-9-]{36})$/i);
+    if (!m) return null;
+    const owner = u.searchParams.get("o") ?? "";
+    const sig = u.searchParams.get("s") ?? "";
+    if (!owner || !sig) return null;
+    return verifyUpload(m[1], tenantId, owner, sig) ? owner : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Valida os anexos contra o dono real ANTES de o servidor ler qualquer arquivo
+ * do disco. A URL assinada prova (id, tenant, owner) via HMAC; só então
+ * confiamos nos caminhos locais (`path`/`contentPath`), exigindo que fiquem
+ * DENTRO de `uploads/<tenant>/<owner>/`. Se a prova falhar ou o caminho escapar
+ * do escopo, zeramos os caminhos locais — o `path` do cliente NUNCA é lido às
+ * cegas (evita `readFileSync("/etc/passwd")` e leitura cross-tenant/-user).
+ */
+function sanitizeAttachments(
+  attachments: AttachmentPayload[],
+  tenantId: string,
+): AttachmentPayload[] {
+  return attachments.map((a) => {
+    const owner = ownerFromSignedUrl(a.url, tenantId);
+    const pathOk = owner != null && isOwnedUploadPath(a.path, tenantId, owner);
+    const contentOk = owner != null && isOwnedUploadPath(a.contentPath, tenantId, owner);
+    if (pathOk && (contentOk || !a.contentPath)) return a;
+    if (a.path || a.contentPath) {
+      console.warn(
+        `[chat:attach] caminho local fora do escopo do dono descartado: ${a.filename}`,
+      );
+    }
+    return {
+      ...a,
+      path: pathOk ? a.path : "",
+      contentPath: contentOk ? a.contentPath : undefined,
+    };
+  });
+}
+
 function injectAttachments(
   messages: unknown[],
   attachments: AttachmentPayload[],
@@ -920,9 +974,12 @@ export async function handleChatRequest(body: ChatRequestBody): Promise<Response
   const { messages, wavesSession, defaultWorkflowId } = body;
 
   // Injeta o texto extraído dos anexos na última mensagem do user (antes de
-  // detectar demo/cache triggers e de despachar pro provider).
+  // detectar demo/cache triggers e de despachar pro provider). Antes disso,
+  // valida cada anexo contra o dono (URL assinada + containment em
+  // uploads/<tenant>/<owner>/) pra o servidor nunca ler arquivo fora do escopo.
   if (body.attachments?.length) {
-    injectAttachments(messages, body.attachments);
+    const safe = sanitizeAttachments(body.attachments, getActiveTenant().id);
+    injectAttachments(messages, safe);
   }
 
   const scopeContext = buildScopeContext(body);

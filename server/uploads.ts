@@ -45,6 +45,23 @@ function seg(v: string | number): string {
   return String(v).replace(/[^a-z0-9_-]/gi, "").slice(0, 64) || "_";
 }
 
+/**
+ * `true` se `candidate` (path absoluto de um anexo) fica DENTRO do diretório de
+ * uploads do par (tenant, owner) — âncora anti path-traversal. Reutilizado pelo
+ * chat pra validar `attachments[].path`/`contentPath` contra o dono do Bearer,
+ * evitando leitura arbitrária de arquivo (ex.: `/etc/passwd`) ou cross-tenant/-user.
+ */
+export function isOwnedUploadPath(
+  candidate: string | undefined | null,
+  tenantId: string,
+  owner: number | string,
+): boolean {
+  if (!candidate) return false;
+  const base = resolve(UPLOAD_DIR, seg(tenantId), seg(owner));
+  const rp = resolve(candidate);
+  return rp === base || rp.startsWith(base + "/");
+}
+
 /** Extrai o Bearer do header Authorization. */
 function bearerOf(req: { headers: Record<string, unknown> }): string | null {
   const h = req.headers["authorization"];

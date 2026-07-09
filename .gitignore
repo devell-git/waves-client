@@ -17,3 +17,6 @@ agent-files
 *.deprecated
 prompts/Untitled
 data/
+
+# Logs (podem conter previews de credencial / dados operacionais)
+*.log
