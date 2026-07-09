@@ -16,10 +16,12 @@ import {
 import { Renderer } from "@openuidev/react-lang";
 // Library custom shadcn-genui (36 componentes ricos baseados em shadcn/ui)
 // substitui o openuiChatLibrary built-in pra ter UI mais polida no chat.
+import { isOpenUrlAllowed } from "../lib/open-url-allowlist";
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
 import { AnalysisReport } from "../lib/shadcn-genui/components/analysis-report";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatComposer } from "./ChatComposer";
+import { ConversationLauncher, InputFormComposerGate, useInputFormGatePending } from "./ConversationLauncher";
 import { UserMessageView } from "./UserMessageView";
 import { MessageExport } from "./MessageExport";
 import { NotificationBell } from "./NotificationBell";
@@ -522,12 +524,7 @@ function GenUIAssistantMessage({
         if (event.type === "open_url") {
           const rawUrl = event.params?.url;
           const url = typeof rawUrl === "string" ? rawUrl : "";
-          const safe =
-            /^\/[^/]/.test(url) ||
-            /^https:\/\/([a-z0-9-]+\.)*devell\.com\.br(\/|$)/i.test(url) ||
-            /^https:\/\/secure\.d4sign\.com\.br(\/|$)/i.test(url) ||
-            /^https:\/\/teams\.microsoft\.com(\/|$)/i.test(url);
-          if (safe) {
+          if (isOpenUrlAllowed(url)) {
             window.open(url, "_blank", "noopener,noreferrer");
           } else if (url) {
             console.warn("[openui] open_url bloqueado (fora da allowlist):", url);
@@ -553,15 +550,19 @@ function WelcomeArea({
   starters,
   title,
   subtitle,
+  agent,
 }: {
   starters: ProfileStarter[];
   title?: string;
   subtitle?: string;
+  agent?: AgentItem;
 }) {
   const messages = useThread((s) => s.messages);
   const isLoadingMessages = useThread((s) => s.isLoadingMessages);
   const processMessage = useThread((s) => s.processMessage);
   const isRunning = useThread((s) => s.isRunning);
+  const formPending = useInputFormGatePending(agent);
+  if (formPending) return null;
   if (!isChatEmpty({ isLoadingMessages, messages })) return null;
 
   return (
@@ -1575,8 +1576,10 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                   starters={starters}
                   title={activeAgent?.page_title}
                   subtitle={activeAgent?.page_subtitle}
+                  agent={activeAgent}
                 />
                 <Shell.ScrollArea scrollVariant="always">
+                  <ConversationLauncher agent={activeAgent} />
                   <Shell.Messages
                     loader={<ThinkingIndicator />}
                     assistantMessage={GenUIAssistantMessage}
@@ -1590,13 +1593,15 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
                     onScopeRefresh={setUserScope}
                   />
                 </Shell.ScrollArea>
-                <ChatComposer
-                  attachmentsRef={attachmentsRef}
-                  reasoningMode={reasoningMode}
-                  onToggleReasoning={
-                    reasoningPolicy === "Selectable" ? toggleReasoning : undefined
-                  }
-                />
+                <InputFormComposerGate agent={activeAgent}>
+                  <ChatComposer
+                    attachmentsRef={attachmentsRef}
+                    reasoningMode={reasoningMode}
+                    onToggleReasoning={
+                      reasoningPolicy === "Selectable" ? toggleReasoning : undefined
+                    }
+                  />
+                </InputFormComposerGate>
               </Shell.ThreadContainer>
             </Shell.Container>
             </ActiveThreadContext.Provider>

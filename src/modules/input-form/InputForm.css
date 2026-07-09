@@ -1,0 +1,161 @@
+/* Renderer do input_form do agente. Usa os tokens de tema do app (shadcn). */
+.wif {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Variante dentro do balão de mensagem do assistente — sem padding externo. */
+.wif--bubble {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 1rem;
+}
+.wif--bubble .wif__title {
+  font-size: 1.05rem;
+}
+.wif--bubble .wif__grid {
+  gap: 0.75rem 0.65rem;
+}
+
+.wif__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.wif__title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+.wif__subtitle {
+  font-size: 0.9rem;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+.wif__grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 0.9rem 0.75rem;
+}
+
+.wif__header {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0.5rem 0 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.35rem;
+}
+.wif__paragraph {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+.wif__break {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.25rem 0;
+}
+
+.wif__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.wif__label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.wif__req {
+  color: #dc2626;
+}
+
+.wif__control {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.wif__control:focus {
+  border-color: var(--ring, var(--primary));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring, var(--primary)) 30%, transparent);
+}
+.wif__control:disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+textarea.wif__control {
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.wif__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  padding: 0.15rem 0;
+}
+.wif__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.wif__check input {
+  accent-color: var(--primary);
+}
+
+.wif__field--error .wif__control {
+  border-color: #dc2626;
+}
+.wif__error-msg {
+  font-size: 0.72rem;
+  color: #dc2626;
+}
+
+.wif__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.wif__submit {
+  padding: 0.6rem 1.4rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border: none;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.wif__submit:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.wif__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .wif__field {
+    grid-column: span 12 !important;
+  }
+}

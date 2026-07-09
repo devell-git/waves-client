@@ -28,8 +28,8 @@ import {
 } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import * as XLSX from "xlsx";
 import mammoth from "mammoth";
+import { spreadsheetToText } from "./sheet-extract.js";
 // Importa o módulo interno — o entrypoint `pdf-parse` roda código de debug
 // (lê um PDF de teste) quando `module.parent` é undefined, o que quebra em ESM.
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
@@ -141,13 +141,7 @@ async function extractText(
         break;
       }
       case "sheet": {
-        const wb = XLSX.read(buf, { type: "buffer" });
-        const parts: string[] = [];
-        for (const name of wb.SheetNames) {
-          const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
-          if (csv.trim()) parts.push(`## ${name}\n${csv.trim()}`);
-        }
-        raw = parts.join("\n\n");
+        raw = spreadsheetToText(buf);
         break;
       }
       case "text":

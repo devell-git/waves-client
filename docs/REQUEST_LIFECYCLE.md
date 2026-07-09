@@ -457,5 +457,31 @@ curl http://127.0.0.1:3002/api/skills | jq   # 42 skills do Steve
 
 # 4. Browser
 # http://127.0.0.1:5173  (Vite HMR)
+```
+
+---
+
+## 12. input_form — gate de abertura de conversa (2026-07)
+
+Quando o agente cadastrado na Waves traz `input_form` (schema jQuery FormBuilder)
+no payload de login:
+
+1. **Nova conversa** com chat vazio → `ConversationLauncher` renderiza o form
+   **dentro de um balão do assistente** (mesma área de scroll das mensagens).
+2. Campos com `className` contendo `ai-target` **não são renderizados** — vão
+   pro `<context>` da 1ª mensagem com `label` + `prompt` + valores permitidos.
+3. O usuário preenche só os campos visíveis; o botão usa `submit_button_text`
+   (envelope do form ou `AgentItem.submit_button_text`).
+4. Submit → auto-send via `processMessage` com `<content>` (campos do user) +
+   `<context>` (`user_inputs` + `ai_targets`). O balão some; a bolha do user
+   aparece na mesma thread; o composer é liberado.
+5. Módulo reutilizável: `src/modules/input-form/` (parser, renderer React,
+   `buildKickoffMessage`). Glue no chat: `src/components/ConversationLauncher.tsx`.
+
+**Arquitetura-alvo (5 projetos):** WebApp (este repo) → BFF Express → Waves-core
+(login/perm) + agent-gateway (conversa) + integration-core (config/PEP, futuro
+Integration Manager). Canais (WhatsApp) falam só com agent-gateway, não com
+integration-core.
+
 # OU  http://127.0.0.1:3002 (servindo dist/)
 ```

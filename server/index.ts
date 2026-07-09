@@ -32,6 +32,8 @@ import {
 import { getProgress } from "./tool-progress.js";
 import { allRenderedBases, rememberJobBackend, renderedUrlForJob } from "./specialist-jobs.js";
 import { DEFAULT_OPENAI_MODEL } from "./waves-prompt.js";
+import { detectProfile } from "./runtime-config.js";
+import { UPSTREAM } from "./upstream-registry.js";
 import { loadOpenUISpec } from "./openui-spec.js";
 import { uploadsRouter } from "./uploads.js";
 import { exportRouter } from "./export.js";
@@ -147,9 +149,8 @@ app.get("/api/health", (_req, res) => {
 // X-API-KEY do tenant (resolvido via ACTIVE_TENANT + tenants.json).
 // Authorization Bearer do user passa direto.
 
-// Timeout do proxy Waves: se a Waves travar, não deixa o request pendurado
-// segurando socket/handler. 30s cobre bem operações normais da API.
-const WAVES_PROXY_TIMEOUT_MS = Number(process.env.WAVES_PROXY_TIMEOUT_MS || 30_000);
+// Timeout do proxy Waves — ver UPSTREAM.waves em upstream-registry.ts.
+const WAVES_PROXY_TIMEOUT_MS = UPSTREAM.waves.timeoutMs;
 
 app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   const tenant = getActiveTenant();
@@ -177,7 +178,7 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
         (upstreamPath.includes("?") ? "&" : "?") + "agent_id=" + encodeURIComponent(agentId);
     }
   }
-  const url = `${tenant.url}${upstreamPath}`;
+  const url = UPSTREAM.waves.url(tenant, upstreamPath);
 
   // Cache READ por usuário (combate 429): statistics/* e lista de workflows.
   const auth = req.headers.authorization as string | undefined;
@@ -232,90 +233,7 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
 });
 
 // --- Runtime info (profile detectado + starters contextuais) -------------
-// Permite o frontend mostrar conversation starters apropriados pro profile
-// ativo. Profile inferido pela porta do HERMES_BASE_URL — sem hardcode no
-// frontend. Pra novos profiles, edite PROFILE_STARTERS abaixo.
-interface ProfileStarterFormField {
-  name: string;
-  label: string;
-  placeholder?: string;
-  type?: "text" | "number" | "email";
-  required?: boolean;
-}
-
-interface ProfileStarter {
-  displayText: string;
-  /** Prompt direto pro agente quando o starter NÃO tem form. */
-  prompt: string;
-  /** Quando presente, click abre form local. Submit dispara message. */
-  formFields?: ProfileStarterFormField[];
-  /** Template do prompt enviado após submit do form. `{{name}}` → valor. */
-  submitPromptTemplate?: string;
-}
-
-const PROFILE_STARTERS: Record<string, ProfileStarter[]> = {
-  "18860": [
-    // Steve (BioShield CDMO) — starters fixos pras consultas mais comuns
-    {
-      displayText: "Action Plans abertos",
-      prompt: "Liste todos os Action Plans abertos hoje, com responsável e estágio. Use dashboard visual.",
-    },
-    {
-      displayText: "Status do projeto",
-      prompt: "Me dá um overview do BIOSHIELD agora: fase, frentes ativas, próximos marcos.",
-    },
-    {
-      displayText: "Tarefas críticas",
-      prompt: "Quais são as tasks de maior prioridade ou em atraso nos Action Plans?",
-    },
-    {
-      displayText: "Funil de captação",
-      prompt: "Mostra o estado atual do funil de captação e investimento do projeto.",
-    },
-  ],
-  "18862": [
-    // ybrax-negative-media — Mídia Adversa (CPF + CNPJ)
-    { displayText: "Consultar CNPJ", prompt: "__form_cnpj__" },
-    { displayText: "Consultar CPF", prompt: "__form_cpf__" },
-  ],
-  "18864": [
-    // ybrax-verifique — hub YBRAX (Verifique + consultas). Dois starters:
-    // o SOUL renderiza o form específico por tipo de documento.
-    { displayText: "Consultar CPF", prompt: "__form_cpf__" },
-    { displayText: "Consultar CNPJ", prompt: "__form_cnpj__" },
-  ],
-};
-
-const PROFILE_NAMES: Record<string, string> = {
-  "18860": "bioshield-steve",
-  "18862": "ybrax-negative-media",
-  "18864": "ybrax-verifique",
-};
-
-const PROFILE_ID_TO_PORT: Record<string, string> = {
-  "bioshield-steve": "18860",
-  "ybrax-negative-media": "18862",
-  "ybrax-verifique": "18864",
-};
-
-function detectProfile(requestedId?: string) {
-  // Se o frontend pediu um profile específico (?profile=ybrax-map), respeita.
-  // Caso contrário, fallback pro env HERMES_BASE_URL (default histórico).
-  let port: string;
-  if (requestedId && PROFILE_ID_TO_PORT[requestedId]) {
-    port = PROFILE_ID_TO_PORT[requestedId];
-  } else {
-    const baseURL =
-      process.env.HERMES_BASE_URL?.trim() || "http://127.0.0.1:18862/v1";
-    const m = baseURL.match(/:(\d+)/);
-    port = m ? m[1] : "18862";
-  }
-  return {
-    id: PROFILE_NAMES[port] ?? `unknown-${port}`,
-    port,
-    starters: PROFILE_STARTERS[port] ?? [],
-  };
-}
+// Starters fallback por porta — ver server/runtime-config.ts (pull-ready).
 
 app.get("/api/runtime", (req, res) => {
   const requested = typeof req.query.profile === "string" ? req.query.profile : undefined;

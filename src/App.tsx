@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { verifyApiSession } from "./api/waves-api";
-import { ChatPage } from "./components/ChatPage";
 import { LoginPage } from "./components/LoginPage";
-import { ArchitectureExplorer } from "./components/architecture/ArchitectureExplorer";
-import { SOCDashboard } from "./components/soc/SOCDashboard";
-import { TokenDashboard } from "./components/tokens/TokenDashboard";
+import { ChatPage } from "./components/ChatPage";
 import "./components/tokens/tokens.css";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import { purgeUserScopedCaches } from "./lib/user-cache";
-import { isAdminUser } from "./lib/permissions";
 import { fetchTenantBranding } from "./lib/tenant";
+import { APP_ROUTES, renderGuardedRoute } from "./modules/app-routes";
 import type { AuthSession } from "./types/auth";
 
 /**
@@ -132,36 +129,13 @@ export default function App() {
           )
         }
       />
-      <Route
-        path="/admin/architecture"
-        element={
-          session && isAdminUser(session.roles, session.user.type) ? (
-            <ArchitectureExplorer session={session} />
-          ) : (
-            <Navigate to={session ? "/chat" : "/login"} replace />
-          )
-        }
-      />
-      <Route
-        path="/admin/soc"
-        element={
-          session && isAdminUser(session.roles, session.user.type) ? (
-            <SOCDashboard session={session} />
-          ) : (
-            <Navigate to={session ? "/chat" : "/login"} replace />
-          )
-        }
-      />
-      <Route
-        path="/admin/tokens"
-        element={
-          session && isAdminUser(session.roles, session.user.type) ? (
-            <TokenDashboard session={session} />
-          ) : (
-            <Navigate to={session ? "/chat" : "/login"} replace />
-          )
-        }
-      />
+      {APP_ROUTES.map((def) => (
+        <Route
+          key={def.path}
+          path={def.path}
+          element={renderGuardedRoute(def, session)}
+        />
+      ))}
       <Route path="*" element={<Navigate to={session ? "/chat" : "/login"} replace />} />
     </Routes>
   );

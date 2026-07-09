@@ -37,6 +37,12 @@ export type AgentItem = {
   document_type_ids?: number[];
   /** Relação expandida do mesmo escopo (cada item tem ao menos `id`). */
   document_types?: Array<{ id: number; name?: string; [key: string]: unknown }>;
+  /** Formulário de abertura de conversa (schema jQuery FormBuilder, cadastrado
+   *  na Waves). Quando presente, o WebApp renderiza o form ANTES do chat e injeta
+   *  os dados no contexto da 1ª mensagem. Parseado pelo módulo `input-form`. */
+  input_form?: unknown;
+  /** Rótulo do botão de submit do input_form (quando não vem no envelope). */
+  submit_button_text?: string;
   [key: string]: unknown;
 };
 

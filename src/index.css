@@ -2482,6 +2482,14 @@ a {
   cursor: not-allowed;
 }
 
+/* Formulário de abertura (input_form) dentro do balão do assistente */
+.waves-input-form-message {
+  margin-bottom: 0.5rem;
+}
+.waves-input-form-message__bubble {
+  max-width: min(100%, 52rem);
+}
+
 /* ─── Mensagem assistant (GenUI) — meta colado ao card ─────────────────── */
 /* A lib aplica min-height ~100dvh no último filho de .thread-messages (scroll
    anchor). Com Renderer + rodapé em fragmentos separados, só o meta virava
