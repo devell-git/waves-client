@@ -1445,7 +1445,8 @@ export function ChatPage({ session, onLogout }: ChatPageProps) {
     onExpire: handleExpire,
   });
 
-  // #790 — 401/403 em qualquer chamada /api/* → sessão expirou → logout + login.
+  // #790 — 401 no proxy de auth /api/waves/* (token morto) → logout + login.
+  // Conservador: só 401 (não 403 de permissão) e só no proxy de auth.
   useEffect(() => installAuthInterceptor(() => handleExpire("expired")), [handleExpire]);
 
   const fullThreadKey = `${threadKeyPrefix}${activeThreadId}`;

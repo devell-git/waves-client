@@ -181,6 +181,26 @@ export function isTenantResolved(t: Tenant | null | undefined): boolean {
   return !!t && t.id !== "unresolved" && !!t.url;
 }
 
+/**
+ * Host efetivo do request. Por padrão confia em `X-Forwarded-Host` (deploy atrás
+ * de reverse proxy — Caddy/NPM — que preservam/setam o header). Defina
+ * `TRUST_FORWARDED_HOST=false` quando o Express ficar EXPOSTO direto: aí o
+ * cliente poderia forjar `X-Forwarded-Host` pra resolver outro tenant (branding
+ * + api_key), então usamos só o `Host` real da conexão.
+ */
+const TRUST_FORWARDED_HOST =
+  (process.env.TRUST_FORWARDED_HOST ?? "true").trim().toLowerCase() !== "false";
+
+export function hostFromHeaders(headers: {
+  host?: string;
+  "x-forwarded-host"?: string | string[];
+}): string | undefined {
+  const fwd = headers["x-forwarded-host"];
+  const fwdStr = Array.isArray(fwd) ? fwd[0] : fwd;
+  if (TRUST_FORWARDED_HOST && fwdStr) return fwdStr;
+  return headers.host;
+}
+
 /** Resolve o tenant pelo Host do request. `null` se nenhum atender o host. */
 export function resolveTenantByHost(host: string | undefined): Tenant | null {
   const h = normalizeHost(host);

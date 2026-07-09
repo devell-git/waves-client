@@ -8,8 +8,10 @@
  * (ThinkingIndicator) faz polling do endpoint `/api/chat/progress` pra
  * mostrar pro usuário o que o agente está fazendo agora.
  *
- * Escopo global (sem sessionId) — o waves_client tem ~1 request ativa por
- * vez. Se virar multi-tenant, dá pra evoluir pra Map<sessionId, Progress>.
+ * Escopo POR SESSÃO (`Map<sessionKey, Progress>`) — cada request ativa tem seu
+ * próprio bucket, keyed pelo sessionId do Hermes
+ * (`waves-<tenant>-user-<id>::<thread>`). Antes era um buffer global único, o
+ * que fazia dois chats simultâneos verem o progresso um do outro no poll.
  */
 
 export interface ToolProgress {
@@ -126,29 +128,46 @@ function humanizeProgress(tool: string, label?: string): string {
   return "Trabalhando nisso…";
 }
 
-let current: ToolProgress | null = null;
+/** Progresso por sessão (chave = sessionId do Hermes). */
+const bySession = new Map<string, ToolProgress>();
+const STALE_MS = 10_000;
 
-export function setProgress(p: Omit<ToolProgress, "ts" | "humanLabel">): void {
-  current = {
+/** Remove entradas antigas pra o Map não crescer indefinidamente. */
+function pruneStale(now: number): void {
+  for (const [key, p] of bySession) {
+    if (now - p.ts > STALE_MS) bySession.delete(key);
+  }
+}
+
+export function setProgress(
+  sessionKey: string,
+  p: Omit<ToolProgress, "ts" | "humanLabel">,
+): void {
+  if (!sessionKey) return;
+  const now = Date.now();
+  pruneStale(now);
+  bySession.set(sessionKey, {
     ...p,
     humanLabel: humanizeProgress(p.tool, p.label),
-    ts: Date.now(),
-  };
+    ts: now,
+  });
 }
 
 /**
- * Devolve o progresso atual. Considera stale (>10s sem update) como null
- * pra evitar mostrar tool antiga depois que a request terminou.
+ * Devolve o progresso da sessão informada. Considera stale (>10s sem update)
+ * como null pra evitar mostrar tool antiga depois que a request terminou.
  */
-export function getProgress(): ToolProgress | null {
-  if (!current) return null;
-  if (Date.now() - current.ts > 10_000) {
-    current = null;
+export function getProgress(sessionKey: string): ToolProgress | null {
+  if (!sessionKey) return null;
+  const p = bySession.get(sessionKey);
+  if (!p) return null;
+  if (Date.now() - p.ts > STALE_MS) {
+    bySession.delete(sessionKey);
     return null;
   }
-  return current;
+  return p;
 }
 
-export function clearProgress(): void {
-  current = null;
+export function clearProgress(sessionKey: string): void {
+  if (sessionKey) bySession.delete(sessionKey);
 }

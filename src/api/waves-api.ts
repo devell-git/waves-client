@@ -302,8 +302,26 @@ export async function fetchAssistantFunnelApi(
  * O usuário continua usando o app; se o token estiver REALMENTE morto, a
  * próxima request real vai falhar 401 e o cliente individual lida com isso.
  */
-export async function verifyApiSession(_session: AuthSession): Promise<boolean> {
-  // Sem checagem — a sessão é sempre válida enquanto existir no localStorage.
-  // O logout acontece apenas quando o usuário clica em "Sair".
-  return true;
+export async function verifyApiSession(session: AuthSession): Promise<boolean> {
+  // 1. Expiração local (barata, sem rede): token já vencido → inválido.
+  if (typeof session.expiresAt === "number" && Date.now() >= session.expiresAt) {
+    return false;
+  }
+  // 2. Validação server-side via proxy (/api/waves/user injeta o X-API-KEY do
+  //    tenant). Só 401/403 (auth de fato negada) invalida; erros transitórios
+  //    (429/5xx/network/timeout) mantêm a sessão — política intencionalmente
+  //    leniente pra não deslogar em intermitência.
+  const cfg = getEnvConfig();
+  if (!cfg.url) return true; // sem URL configurada → não dá pra validar; mantém
+  try {
+    const response = await fetch(`${cfg.url}/user`, {
+      method: "GET",
+      headers: authHeaders(cfg.token, session.accessToken),
+      credentials: "include",
+    });
+    if (response.status === 401 || response.status === 403) return false;
+    return true;
+  } catch {
+    return true; // erro transitório/rede — mantém a sessão
+  }
 }

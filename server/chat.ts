@@ -65,6 +65,28 @@ const HERMES_ALLOWED_HOSTS = new Set(
 // allowlist explícita.
 const HERMES_LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
+// Allowlist de PORTA (anti-SSRF): a porta vem do login (cliente), então sem
+// restrição um usuário autenticado poderia apontar o proxy pra qualquer serviço
+// interno no loopback (redis:6379, postgres:5432, o próprio :3002, etc.).
+//   - `HERMES_ALLOWED_PORTS` (CSV de portas exatas) — se definido, é a fonte da
+//     verdade (só essas portas passam).
+//   - Senão, cai na FAIXA default [HERMES_PORT_MIN, HERMES_PORT_MAX] (18000–18999),
+//     onde vivem todos os api_server de gateway observados (188xx/189xx). Isso
+//     bloqueia portas de serviços não-Hermes sem exigir config por-deploy.
+const HERMES_ALLOWED_PORTS = new Set(
+  (process.env.HERMES_ALLOWED_PORTS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+const HERMES_PORT_MIN = Number(process.env.HERMES_PORT_MIN || 18000);
+const HERMES_PORT_MAX = Number(process.env.HERMES_PORT_MAX || 18999);
+
+function isAllowedHermesPort(p: number): boolean {
+  if (HERMES_ALLOWED_PORTS.size) return HERMES_ALLOWED_PORTS.has(String(p));
+  return p >= HERMES_PORT_MIN && p <= HERMES_PORT_MAX;
+}
+
 // Hostname seguro: letras/dígitos/`.`/`-` (DNS) ou IPv4. NÃO casa `@`, `/`, `:`,
 // espaço — caracteres que permitiriam subverter a URL (userinfo, path, porta
 // embutida) e desviar a request pra outro destino.
@@ -84,6 +106,11 @@ export function resolveHermesGateway(
   const p = Number(port);
   if (!Number.isInteger(p) || p < 1 || p > 65535) {
     return { ok: false, status: 400, error: `Porta de gateway inválida: ${String(port)}` };
+  }
+  // Anti-SSRF: a porta vem do cliente; restringe às portas de gateway Hermes
+  // (allowlist ou faixa default) pra não virar proxy pra serviços internos.
+  if (!isAllowedHermesPort(p)) {
+    return { ok: false, status: 400, error: `Porta de gateway não permitida: ${p}` };
   }
   const h = (host || "").trim().toLowerCase();
   // Host do login só é honrado se: forma segura E na allowlist. Qualquer outra
@@ -1843,7 +1870,7 @@ async function handleChatRequestHermes(
                       status?: string;
                     };
                     if (p.tool) {
-                      setProgress({
+                      setProgress(sessionId, {
                         tool: p.tool,
                         emoji: p.emoji,
                         label: p.label,
@@ -2054,9 +2081,9 @@ async function handleChatRequestHermes(
             setFormCached(cacheTrigger, finalContent);
           }
 
-          // Limpa buffer de progress — request finalizada, frontend não
-          // precisa mais mostrar tool em execução.
-          clearProgress();
+          // Limpa buffer de progress DESTA sessão — request finalizada,
+          // frontend não precisa mais mostrar tool em execução.
+          clearProgress(sessionId);
 
           // Marcador de usage (tokens da geração) — o frontend extrai e mostra
           // só pra admin. Vai como content num comentário HTML (o renderer e o

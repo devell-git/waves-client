@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { useThread } from "@openuidev/react-headless";
 import { useActiveThreadId } from "../lib/active-thread-context";
 import { useRunningThreadId } from "../lib/active-runs";
+import { loadSession } from "../lib/session";
 
 interface ToolProgress {
   tool: string;
@@ -41,11 +42,18 @@ export function ThinkingIndicator() {
   const runningThread = useRunningThreadId();
   const [progress, setProgress] = useState<ToolProgress | null>(null);
 
+  // Thread cujo run está de fato executando (fallback: a que está aberta).
+  // O progress é escopado por sessão no backend (thread + Bearer).
+  const pollThread = runningThread ?? viewedThread;
+
   useEffect(() => {
-    if (!isRunning) {
+    if (!isRunning || !pollThread) {
       setProgress(null);
       return;
     }
+
+    const session = loadSession();
+    const token = session?.accessToken;
 
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -57,9 +65,13 @@ export function ThinkingIndicator() {
       abortController?.abort();
       abortController = new AbortController();
       try {
-        const r = await fetch("/api/chat/progress", {
-          signal: abortController.signal,
-        });
+        const r = await fetch(
+          `/api/chat/progress?thread=${encodeURIComponent(pollThread)}`,
+          {
+            signal: abortController.signal,
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          },
+        );
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = (await r.json()) as { progress: ToolProgress | null };
         if (cancelled) return;
@@ -83,7 +95,7 @@ export function ThinkingIndicator() {
       if (timeoutId) clearTimeout(timeoutId);
       abortController?.abort();
     };
-  }, [isRunning]);
+  }, [isRunning, pollThread]);
 
   // ESCOPO POR THREAD (#828): se o run em voo pertence a OUTRA thread, não
   // mostra o "pensando" aqui — senão vaza pro chat que o usuário abriu.

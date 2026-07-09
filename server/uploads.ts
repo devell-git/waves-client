@@ -33,7 +33,7 @@ import mammoth from "mammoth";
 // Importa o módulo interno — o entrypoint `pdf-parse` roda código de debug
 // (lê um PDF de teste) quando `module.parent` é undefined, o que quebra em ESM.
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
-import { getActiveTenant, isTenantResolved, type Tenant } from "./tenants.js";
+import { getActiveTenant, hostFromHeaders, isTenantResolved, type Tenant } from "./tenants.js";
 import { getWavesUser, type WavesSession } from "./waves-client.js";
 import { signUpload, verifyUpload } from "./signed-url.js";
 
@@ -197,7 +197,7 @@ uploadsRouter.post("/", (req, _res, next) => {
   if (!token) return res.status(401).json({ error: "Autenticação necessária." });
   const tenant = (req as any)._tenant as Tenant;
   if (!isTenantResolved(tenant)) {
-    const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "?";
+    const host = hostFromHeaders(req.headers) || "?";
     console.error(`[upload] tenant não resolvido para host="${host}"`);
     return res.status(421).json({ error: "Tenant não configurado para este host." });
   }

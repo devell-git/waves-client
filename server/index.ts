@@ -15,6 +15,7 @@ import { handleChatRequest, resolveHermesGateway } from "./chat.js";
 import {
   getActiveTenant,
   getDefaultTenant,
+  hostFromHeaders,
   isTenantResolved,
   resolveTenantByHost,
   runWithTenant,
@@ -67,7 +68,7 @@ app.use(express.json({ limit: "25mb" }));
 // consumidores (proxy /api/waves, /api/tenant) checam isTenantResolved e falham
 // explicitamente em vez de servir a Waves/marca de outro tenant.
 app.use((req, _res, next) => {
-  const host = (req.headers["x-forwarded-host"] as string) || req.headers.host;
+  const host = hostFromHeaders(req.headers);
   const tenant = resolveTenantByHost(host) ?? getDefaultTenant();
   runWithTenant(tenant, () => next());
 });
@@ -121,7 +122,7 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   // Host sem tenant → 421 e PARA. Nunca encaminha pra uma Waves default/legacy
   // (serviria dados do tenant errado). Ou o host bate num tenant, ou falha.
   if (!isTenantResolved(tenant)) {
-    const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "?";
+    const host = hostFromHeaders(req.headers) || "?";
     return res.status(421).json({
       error: `Host "${host}" não está mapeado a nenhum tenant. Configure em .secrets/tenants.json.`,
     });
@@ -415,6 +416,10 @@ app.post("/api/notifications", async (req, res) => {
   const title = String(b.title ?? "");
   if (!profile || !userId || !title)
     return res.status(400).json({ error: "profile, user_id, title required" });
+  // AUTH: só cria notificação PRA SI MESMO (o user_id tem que bater com o token).
+  // Notificação pra OUTRO usuário é server-side (createNotification em share/files)
+  // ou server-to-server (/api/notifications/ingest com X-Ingest-Key).
+  if (userId !== String(me)) return res.status(403).json({ error: "Sem permissão." });
   try {
     const id = createNotification({
       tenant: notifTenant(),
@@ -556,8 +561,17 @@ app.post("/api/documents/:docId/share", async (req, res) => {
 // Progress da tool em execução no Hermes — frontend polla durante o stream
 // pra mostrar no ThinkingIndicator. Retorna null quando nada está em
 // execução ou quando o último progress está stale (>10s).
-app.get("/api/chat/progress", (_req, res) => {
-  res.json({ progress: getProgress() });
+// Escopo POR SESSÃO: o progress é keyed pelo sessionId do Hermes
+// (`waves-<tenant>-user-<id>::<thread>`). Reconstruímos a MESMA chave a partir
+// do Bearer (user id) + tenant (host/ALS) + `?thread=` — assim um usuário só
+// enxerga o próprio progresso (não vaza entre chats/usuários concorrentes).
+app.get("/api/chat/progress", async (req, res) => {
+  const thread = String(req.query.thread ?? "").trim();
+  if (!thread) return res.json({ progress: null });
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) return res.json({ progress: null });
+  const sessionKey = `waves-${getActiveTenant().id}-user-${me}::${thread}`;
+  res.json({ progress: getProgress(sessionKey) });
 });
 
 // --- Proxy pra rendered_api (specialist jobs em openui-lang) ---------------
@@ -1027,6 +1041,12 @@ app.use("/api/files", filesRouter);
 
 app.post("/api/chat", async (req, res) => {
   try {
+    // wantUsage (contagem de tokens no stream) é admin-only. Deriva do Bearer —
+    // nunca confia na flag do body. Não-admin: descarta a flag silenciosamente.
+    if (req.body && (req.body as { wantUsage?: unknown }).wantUsage) {
+      const admin = await isAdminFromBearer(req.headers.authorization as string | undefined);
+      if (!admin) (req.body as { wantUsage?: boolean }).wantUsage = false;
+    }
     const response = await handleChatRequest(req.body);
     res.status(response.status);
     response.headers.forEach((value, key) => {
@@ -1062,10 +1082,7 @@ app.post("/api/logout", async (req, res) => {
     return res.status(400).json({ error: "token ausente" });
   }
   // Resolve o tenant direto do Host do request (não via ALS — handler async).
-  const tenant =
-    resolveTenantByHost(
-      (req.headers["x-forwarded-host"] as string) || req.headers.host,
-    ) ?? null;
+  const tenant = resolveTenantByHost(hostFromHeaders(req.headers)) ?? null;
   // 1) Evict em cada gateway (loopback por padrão; mesma resolução do chat).
   await Promise.allSettled(
     gateways.map(async (g) => {
