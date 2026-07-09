@@ -583,6 +583,13 @@ function ssGetWfList(): { at: number; list: WfList } | null {
   }
 }
 
+/** Zera os caches de workflow em memória (troca de usuário/logout). O sweep de
+ *  sessionStorage (user-cache) cuida do lado persistido; aqui é só o Map/var. */
+export function resetWorkflowCaches(): void {
+  wfFullCache.clear();
+  wfListCache = null;
+}
+
 export async function getWorkflowList(): Promise<WfList> {
   if (!wfListCache) wfListCache = ssGetWfList(); // hidrata do sessionStorage (reload)
   if (wfListCache && Date.now() - wfListCache.at < WF_LIST_TTL) return wfListCache.list;

@@ -15,3 +15,8 @@ export function setKanbanCtx(next: { workflowId?: number; stageId?: number }): v
 export function getKanbanCtx(): { workflowId?: number; stageId?: number } {
   return ctx;
 }
+
+/** Zera o contexto (troca de usuário/logout — evita vazar workflow entre sessões). */
+export function resetKanbanCtx(): void {
+  ctx = {};
+}

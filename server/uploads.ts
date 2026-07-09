@@ -269,7 +269,7 @@ uploadsRouter.post("/", (req, _res, next) => {
   res.json({ files: out });
 });
 
-uploadsRouter.get("/:id", (req, res) => {
+uploadsRouter.get("/:id", async (req, res) => {
   const id = req.params.id;
   if (!/^[a-f0-9-]{36}$/i.test(id)) {
     return res.status(400).json({ error: "id inválido" });
@@ -303,9 +303,23 @@ uploadsRouter.get("/:id", (req, res) => {
   }
 
   // Fallback LEGADO: uploads flat antigos (pré-separação, sem assinatura).
-  // Mantém preview de mensagens antigas funcionando; recomendado limpar.
+  // ANTES era público (qualquer um lia por UUID). Agora exige Bearer VÁLIDO —
+  // fecha o acesso anônimo. Arquivos legados não têm owner, então não dá pra
+  // checar dono, mas exigir login já elimina o vazamento. Recomendado migrar/limpar.
   const legacyDir = resolve(UPLOAD_DIR, id);
   if (legacyDir.startsWith(UPLOAD_DIR + "/") && existsSync(legacyDir)) {
+    const token = bearerOf(req);
+    if (!token) return res.status(401).json({ error: "Autenticação necessária." });
+    const tenant = getActiveTenant();
+    if (!isTenantResolved(tenant)) {
+      return res.status(421).json({ error: "Tenant não configurado para este host." });
+    }
+    try {
+      const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
+      await getWavesUser({ environment: env, accessToken: token }, tenant);
+    } catch {
+      return res.status(401).json({ error: "Falha na validação do token." });
+    }
     const entries = readdirSync(legacyDir).filter((e) => e !== "meta.json");
     if (entries.length) return res.sendFile(resolve(legacyDir, entries[0]));
   }

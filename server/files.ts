@@ -185,17 +185,21 @@ filesRouter.get("/:id", async (req, res) => {
     return res.status(403).json({ error: "Sem permissão para este arquivo." });
   }
 
-  // Controle de acesso: se o arquivo tem dono, exige token válido do DONO ou de
-  // alguém com quem foi COMPARTILHADO (shared_with).
-  if (meta.owner != null) {
+  // Controle de acesso: SEMPRE exige token válido (fecha o acesso anônimo que
+  // owner:null permitia). Com dono definido, além disso confere que o usuário é
+  // o DONO ou está em shared_with. owner:null = qualquer usuário autenticado do
+  // tenant pode baixar (arquivo "não-sensível"), mas nunca mais anônimo.
+  {
     const token = bearerOf(req);
     if (!token) return res.status(401).json({ error: "Autenticação necessária." });
     try {
       const env = (req.query.env === "dev" ? "dev" : "prod") as WavesSession["environment"];
       const user = await getWavesUser({ environment: env, accessToken: token });
-      const allowed = user.id === meta.owner || (meta.shared_with ?? []).includes(user.id);
-      if (!allowed) {
-        return res.status(403).json({ error: "Sem permissão para este arquivo." });
+      if (meta.owner != null) {
+        const allowed = user.id === meta.owner || (meta.shared_with ?? []).includes(user.id);
+        if (!allowed) {
+          return res.status(403).json({ error: "Sem permissão para este arquivo." });
+        }
       }
     } catch {
       return res.status(401).json({ error: "Token inválido." });

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Copy, Check, Maximize2, X } from "lucide-react";
 import { normalizeForExport } from "../lib/export-normalizers";
+import { loadSession } from "../lib/session";
 
 const PdfIcon = () => (
   <svg width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -115,9 +116,13 @@ body { padding: 24px; background: white; }
 ${clone.innerHTML}
 </div></body></html>`;
 
+        const token = loadSession()?.accessToken;
         const response = await fetch("/api/export-message", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ format, html: fullHtml, text: clone.textContent?.trim() ?? "" }),
         });
 

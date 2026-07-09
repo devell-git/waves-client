@@ -114,9 +114,13 @@ export function useWavesDoc(filename: string) {
     const html = htmlOverride || htmlRef.current;
     if (!html) return;
     try {
+      const token = loadSession()?.accessToken;
       const r = await fetch("/api/export", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ html, filename, format }),
       });
       if (!r.ok) throw new Error(`Falha no export (${r.status})`);

@@ -37,6 +37,8 @@ async function wavesFetch(
   }
 
   const response = await fetch(`${cfg.url}${path}`, {
+    // Não pendura se a Waves travar (init.signal, se vier, tem precedência).
+    signal: AbortSignal.timeout(30_000),
     ...init,
     headers: {
       Accept: "application/json",

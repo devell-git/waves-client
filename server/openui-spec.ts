@@ -75,6 +75,7 @@ export async function loadOpenUISpec(force = false): Promise<OpenUISpec> {
       Accept: "application/json",
       "X-API-KEY": getWavesApiKey(),
     },
+    signal: AbortSignal.timeout(30_000),
   });
   if (!r.ok) {
     throw new Error(`OpenUI spec ${r.status} em ${url}`);
@@ -181,6 +182,7 @@ export async function executeOpenUITool(
     method,
     headers,
     body: sendBody ? JSON.stringify(remainingArgs) : undefined,
+    signal: AbortSignal.timeout(60_000),
   });
 
   const text = await resp.text();

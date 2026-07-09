@@ -2,6 +2,7 @@ import "./load-env.js";
 import cors from "cors";
 import express from "express";
 import { existsSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,35 @@ const DIST_DIR = resolve(ROOT_DIR, "dist");
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
 
+// Comparação de segredo em tempo (quase) constante — evita side-channel de
+// timing em chaves de serviço. timingSafeEqual exige buffers do mesmo tamanho;
+// em tamanho diferente comparamos contra si mesmo e retornamos false.
+function safeEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) {
+    timingSafeEqual(ba, ba);
+    return false;
+  }
+  return timingSafeEqual(ba, bb);
+}
+
+// Exige um Bearer VÁLIDO (resolvido contra a Waves) — usado em endpoints que
+// consomem recurso (transcribe/export via Whisper/weasyprint/docx) pra evitar
+// abuso anônimo. Deriva o usuário do token; nunca confia em flag do cliente.
+async function requireAuth(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): Promise<void> {
+  const me = await userIdFromBearer(req.headers.authorization as string | undefined);
+  if (me == null) {
+    res.status(401).json({ error: "Autenticação necessária." });
+    return;
+  }
+  next();
+}
+
 // Resolve o tenant pela ORIGEM da requisição (Host) e fixa no contexto (ALS)
 // pra todo o request. Sem match → UNRESOLVED (via getDefaultTenant, que só honra
 // DEFAULT_TENANT explícito) — NUNCA o 1º tenant nem WAVES_URL legado. Os
@@ -117,6 +147,10 @@ app.get("/api/health", (_req, res) => {
 // X-API-KEY do tenant (resolvido via ACTIVE_TENANT + tenants.json).
 // Authorization Bearer do user passa direto.
 
+// Timeout do proxy Waves: se a Waves travar, não deixa o request pendurado
+// segurando socket/handler. 30s cobre bem operações normais da API.
+const WAVES_PROXY_TIMEOUT_MS = Number(process.env.WAVES_PROXY_TIMEOUT_MS || 30_000);
+
 app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   const tenant = getActiveTenant();
   // Host sem tenant → 421 e PARA. Nunca encaminha pra uma Waves default/legacy
@@ -169,7 +203,12 @@ app.all(/^\/api\/waves(\/.*)?$/, async (req, res) => {
   if (hasBody) headers["Content-Type"] = "application/json";
 
   try {
-    const init: RequestInit = { method: req.method, headers };
+    const init: RequestInit = {
+      method: req.method,
+      headers,
+      // Não deixa o proxy pendurar indefinidamente se a Waves travar.
+      signal: AbortSignal.timeout(WAVES_PROXY_TIMEOUT_MS),
+    };
     if (hasBody) {
       init.body = JSON.stringify(req.body ?? {});
     }
@@ -443,7 +482,7 @@ app.post("/api/notifications", async (req, res) => {
 app.post("/api/notifications/ingest", async (req, res) => {
   const expected = (process.env.NOTIFY_INGEST_KEY ?? "").trim();
   const key = String(req.headers["x-ingest-key"] ?? "").trim();
-  if (!expected || key !== expected)
+  if (!expected || !safeEqual(key, expected))
     return res.status(401).json({ error: "ingest key inválida ou ausente." });
   const b = (req.body ?? {}) as Record<string, unknown>;
   const tenant = String(b.tenant ?? "");
@@ -726,7 +765,7 @@ app.get("/api/architecture/activity", async (req, res) => {
 });
 
 // --- Export message as PDF or DOCX -------------------------------------------
-app.post("/api/export-message", async (req, res) => {
+app.post("/api/export-message", requireAuth, async (req, res) => {
   const { format, html, text } = req.body ?? {};
   if (!format || (!html && !text)) {
     return res.status(400).json({ error: "format + html/text required" });
@@ -1025,14 +1064,14 @@ app.get("/api/openui/spec", async (_req, res) => {
 app.use("/api/uploads", uploadsRouter);
 
 // --- Export do documento em Word (.doc) / HTML (PDF é nativo da Waves) -------
-app.use("/api/export", exportRouter);
+app.use("/api/export", requireAuth, exportRouter);
 
 // --- Análise descritiva (modo analítico do relatório) → modelo do agente -----
 app.use("/api/analyze-report", analyzeRouter);
 // Relatório analítico/custom escrito pela IA (focado na instrução do usuário).
 app.use("/api/analysis-report", analysisReportRouter);
 // Transcrição de áudio via Whisper local (botão de microfone no composer).
-app.use("/api/transcribe", transcribeRouter);
+app.use("/api/transcribe", requireAuth, transcribeRouter);
 
 // --- Arquivos enviados PELO AGENTE pro usuário (download seguro) ------------
 // GET /api/files/:id (auth Bearer + ownership + attachment). POST /api/files.

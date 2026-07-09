@@ -8,6 +8,7 @@ import { SOCDashboard } from "./components/soc/SOCDashboard";
 import { TokenDashboard } from "./components/tokens/TokenDashboard";
 import "./components/tokens/tokens.css";
 import { clearSession, loadSession, saveSession } from "./lib/session";
+import { purgeUserScopedCaches } from "./lib/user-cache";
 import { isAdminUser } from "./lib/permissions";
 import { fetchTenantBranding } from "./lib/tenant";
 import type { AuthSession } from "./types/auth";
@@ -72,6 +73,10 @@ export default function App() {
 
   const handleLogin = useCallback(
     (next: AuthSession) => {
+      // Autenticação NOVA → zera qualquer cache de um usuário anterior no mesmo
+      // navegador (relatórios, jobs, workflows, threads). Não roda no restore
+      // (reload do mesmo usuário), só no login explícito.
+      purgeUserScopedCaches();
       setSession(next);
       navigate("/chat", { replace: true });
     },
@@ -92,6 +97,7 @@ export default function App() {
       }).catch(() => {});
     }
     clearSession();
+    purgeUserScopedCaches();
     setSession(null);
     navigate("/login", { replace: true });
   }, [navigate, session]);

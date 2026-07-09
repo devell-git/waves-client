@@ -82,6 +82,10 @@ const HERMES_ALLOWED_PORTS = new Set(
 const HERMES_PORT_MIN = Number(process.env.HERMES_PORT_MIN || 18000);
 const HERMES_PORT_MAX = Number(process.env.HERMES_PORT_MAX || 18999);
 
+// Timeout do stream do Hermes (por turno). Só mata socket pendurado; grande o
+// bastante pra não cortar geração real com tools (default 1h).
+const HERMES_STREAM_TIMEOUT_MS = Number(process.env.HERMES_STREAM_TIMEOUT_MS || 3_600_000);
+
 function isAllowedHermesPort(p: number): boolean {
   if (HERMES_ALLOWED_PORTS.size) return HERMES_ALLOWED_PORTS.has(String(p));
   return p >= HERMES_PORT_MIN && p <= HERMES_PORT_MAX;
@@ -1783,6 +1787,10 @@ async function handleChatRequestHermes(
             const tUp = Date.now();
             const upstream = await fetch(`${baseURL}/chat/completions`, {
               method: "POST",
+              // Guarda contra socket pendurado (upstream que nunca responde/fecha).
+              // Generoso de propósito: uma geração real com tools pode levar minutos,
+              // então NÃO cortamos streams legítimos — só conexões travadas.
+              signal: AbortSignal.timeout(HERMES_STREAM_TIMEOUT_MS),
               headers: {
                 Authorization: `Bearer ${apiKey}`,
                 "Content-Type": "application/json",

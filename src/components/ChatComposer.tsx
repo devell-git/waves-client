@@ -26,6 +26,7 @@ import {
   type UploadKind,
 } from "../api/uploads";
 import { getKanbanCtx } from "../lib/kanban-context";
+import { loadSession } from "../lib/session";
 
 // Intenção de criar tarefa (atalho que abre o modal nativo direto). Casa
 // "criar tarefa", "criar nova tarefa", "nova tarefa", "adicionar task", etc.
@@ -124,7 +125,12 @@ export function ChatComposer({
         const fd = new FormData();
         fd.append("file", blob, "audio.webm");
         fd.append("language", "pt");
-        const r = await fetch("/api/transcribe", { method: "POST", body: fd });
+        const token = loadSession()?.accessToken;
+        const r = await fetch("/api/transcribe", {
+          method: "POST",
+          body: fd,
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         const j = (await r.json().catch(() => ({}))) as { text?: string; error?: string };
         const t = (j.text ?? "").trim();
         if (t) void handleSubmit(t, { voice: true });
