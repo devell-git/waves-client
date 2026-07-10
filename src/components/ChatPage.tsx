@@ -12,12 +12,6 @@ import {
   Shell,
   ThemeProvider,
 } from "@openuidev/react-ui";
-import { Renderer } from "@openuidev/react-lang";
-// Library custom shadcn-genui (36 componentes ricos baseados em shadcn/ui)
-// substitui o openuiChatLibrary built-in pra ter UI mais polida no chat.
-import { isOpenUrlAllowed } from "../lib/open-url-allowlist";
-import { shadcnChatLibrary } from "../lib/shadcn-genui";
-import { AnalysisReport } from "../lib/shadcn-genui/components/analysis-report";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
 import { ConversationLauncher, InputFormComposerGate } from "./ConversationLauncher";
@@ -52,7 +46,6 @@ import {
   toOpenUIMessage,
   setThreadGateway,
 } from "../api/threads";
-import { JobProgressCard, parseCheckJob, stripJobMarker } from "./JobProgressCard";
 import { ActiveThreadContext } from "../lib/active-thread-context";
 import {
   setRunningThread,
@@ -79,23 +72,20 @@ import { setReportThreadKey } from "../lib/report-cache";
 import { loadShortcuts, saveShortcutExchange } from "../lib/shortcut-history";
 import {
   ensureToolProvider,
-  getToolProvider,
   setActiveAgentId,
 } from "../lib/openui-tools";
 import {
   setAdminFlag,
   isAdmin,
   primeMessageTime,
-  extractUsage,
 } from "../lib/message-meta";
 import { isAdminUser } from "../lib/permissions";
 import { savePendingChatRequest } from "../lib/pending-chat-request";
 
-import { platformStartersFor, stripNullArgs, parseAnalysisReport, execReportToOpenui } from "./chat/starter-utils";
+import { platformStartersFor } from "./chat/starter-utils";
 import { tryWorkflowViewShortcut, syntheticSse, appendTaskCard } from "./chat/WorkflowShortcuts";
-import { parseCreateTaskDirective, CreateTaskTrigger } from "./chat/CreateTaskTrigger";
-import { AssistantMessageShell, MessageMeta } from "./chat/AssistantMessageShell";
 import { WelcomeArea } from "./chat/WelcomeArea";
+import { GenUIAssistantMessage } from "./chat/GenUIAssistantMessage";
 import { getEnvironmentLabel } from "../config/env";
 import { personaLabel } from "../lib/permissions";
 import { useTheme } from "../hooks/use-system-theme";
@@ -106,176 +96,6 @@ interface ChatPageProps {
   onLogout: () => void;
 }
 
-// ─── Render do assistant message com GenUI (Renderer + shadcnChatLibrary) ───
-// Substitui o GenUIAssistantMessage interno que o FullScreen usava via
-// withChatProvider. Renderiza openui-lang direto via Renderer.
-//
-// FALLBACK pra texto puro: a SOUL REGRA 0 permite que respostas a
-// saudações ("oi", "obrigado", "ok") sejam texto cru — sem `root =`,
-// sem `Card(...)`. O Renderer do openuidev exige openui-lang e renderiza
-// nada pra texto puro, então detectamos plain text e renderizamos numa
-// bolha de chat simples.
-const OPENUI_PATTERN = /\b(root\s*=|Card\s*\(|CardHeader\s*\(|TextContent\s*\(|Table\s*\(|TagBlock\s*\(|Alert\s*\(|FollowUpItem\s*\(|(?:Pie|Bar|Line)Chart\s*\(|ListBlock\s*\(|Accordion\s*\()/;
-
-
-function GenUIAssistantMessage({
-  message,
-}: {
-  message: { id?: string; content?: string; timestamp?: number };
-}) {
-  const rawContent = typeof message.content === "string" ? message.content : "";
-  const processMessage = useThread((s) => s.processMessage);
-  const isStreaming = useThread((s) => s.isRunning);
-  if (!rawContent) return null;
-
-  // Separa o marcador de usage do conteúdo renderável.
-  const { clean: rawClean, usage } = extractUsage(rawContent);
-  const meta0 = <MessageMeta id={message.id} timestamp={message.timestamp} usage={usage} />;
-  // Marcador analysis_report (tool) → relatório analítico/custom escrito pela IA.
-  const analysisReq = parseAnalysisReport(rawClean);
-  if (analysisReq) {
-    return (
-      <AssistantMessageShell meta={meta0}>
-        <AnalysisReport
-          workflow_id={analysisReq.workflow_id}
-          instruction={analysisReq.instruction}
-          ap_number={analysisReq.ap_number}
-          scope={analysisReq.scope}
-        />
-      </AssistantMessageShell>
-    );
-  }
-  // Marcador exec_report (tool) → vira a chamada openui-lang correta (string
-  // nossa, à prova de null/posição). O relatório é auto-contido, então o resto
-  // do texto é descartado.
-  const execOpenui = execReportToOpenui(rawClean);
-  const content = execOpenui ?? rawClean;
-  const meta = <MessageMeta id={message.id} timestamp={message.timestamp} usage={usage} />;
-
-  // Diretiva de criação de tarefa → abre o modal nativo automaticamente.
-  const createDir = parseCreateTaskDirective(content);
-  if (createDir) {
-    return (
-      <AssistantMessageShell meta={meta}>
-        <CreateTaskTrigger directive={createDir} content={content} />
-      </AssistantMessageShell>
-    );
-  }
-
-  // Job em background (specialist Vigia/Cronos/… ou Relatório MAP/Mídias): o
-  // agente dispara o sub-agent e referencia o job (marcador `check_job: "<id>"`
-  // ou, na prática, `Job: <id>` em prosa). Mostramos a PRELIMINAR do agente E,
-  // logo abaixo, o card vivo "Vigia analisando…" que polla e vira o resultado
-  // quando o job conclui. `bodyContent` tira só um marcador solto (não o de
-  // dentro do openui) pra não exibir o id cru.
-  const job = parseCheckJob(content);
-  const bodyContent = job ? stripJobMarker(content) : content;
-  const hasBody = bodyContent.trim().length > 0;
-  const jobCard = job ? (
-    <JobProgressCard
-      jobId={job.jobId}
-      etaSeconds={job.etaSeconds}
-      specialist={job.specialist}
-      onActionContent={(label, formState) => {
-        const contentPart = label ? `<content>${label}</content>` : "";
-        const ctx: unknown[] = [`User clicked: ${label ?? ""}`];
-        if (formState) ctx.push(formState);
-        processMessage({ role: "user", content: `${contentPart}<context>${JSON.stringify(ctx)}</context>` });
-      }}
-    />
-  ) : null;
-
-  // Só o marcador (sem preliminar) → renderiza apenas o card vivo.
-  if (job && !hasBody) {
-    return <AssistantMessageShell meta={meta}>{jobCard}</AssistantMessageShell>;
-  }
-
-  // Texto puro (sem construções openui-lang) → bolha de chat simples (+ card).
-  if (!OPENUI_PATTERN.test(bodyContent)) {
-    return (
-      <AssistantMessageShell meta={meta}>
-        <div className="assistant-plain-text" style={{
-          padding: "0.75rem 1rem",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}>
-          {bodyContent}
-        </div>
-        {jobCard}
-      </AssistantMessageShell>
-    );
-  }
-
-  return (
-    <AssistantMessageShell meta={meta}>
-    <Renderer
-      response={stripNullArgs(bodyContent)}
-      library={shadcnChatLibrary}
-      isStreaming={isStreaming}
-      toolProvider={getToolProvider() ?? undefined}
-      onAction={(event) => {
-        // edit_task: abre o modal NATIVO de edição (caminho B) — GET ao clicar,
-        // sem passar pelo LLM. O card/botão emite {type:'edit_task', params:{task_id}}.
-        if (event.type === "edit_task") {
-          const raw = event.params?.task_id ?? event.params?.taskId;
-          const taskId = raw != null ? Number(raw) : NaN;
-          if (Number.isFinite(taskId)) {
-            window.dispatchEvent(
-              new CustomEvent("waves:edit-task", { detail: { taskId } }),
-            );
-          }
-          return;
-        }
-        // create_task: abre o modal NATIVO de criação. params: {workflow_id, stage_id?}.
-        if (event.type === "create_task") {
-          const wf = Number(event.params?.workflow_id ?? event.params?.workflowId);
-          const st = event.params?.stage_id ?? event.params?.funnel_stage_id;
-          if (Number.isFinite(wf)) {
-            window.dispatchEvent(
-              new CustomEvent("waves:create-task", {
-                detail: { workflowId: wf, stageId: st != null ? Number(st) : undefined },
-              }),
-            );
-          }
-          return;
-        }
-        if (event.type === "continue_conversation") {
-          const contentPart = event.humanFriendlyMessage
-            ? `<content>${event.humanFriendlyMessage}</content>`
-            : "";
-          const ctx: unknown[] = [`User clicked: ${event.humanFriendlyMessage ?? ""}`];
-          if (event.formState) ctx.push(event.formState);
-          processMessage({
-            role: "user",
-            content: `${contentPart}<context>${JSON.stringify(ctx)}</context>`,
-          });
-          return;
-        }
-        // open_url: o Button(action=open_url) emite isso. Abre em nova aba só
-        // pra URLs seguras — same-origin (/api/...) ou hosts confiáveis (Waves).
-        // Bloqueia javascript:/data:/externos não-allowlisted (proteção contra
-        // openui-lang malicioso vindo de prompt-injection num doc enviado).
-        if (event.type === "open_url") {
-          const rawUrl = event.params?.url;
-          const url = typeof rawUrl === "string" ? rawUrl : "";
-          if (isOpenUrlAllowed(url)) {
-            window.open(url, "_blank", "noopener,noreferrer");
-          } else if (url) {
-            console.warn("[openui] open_url bloqueado (fora da allowlist):", url);
-          }
-        }
-      }}
-    />
-    {jobCard}
-    </AssistantMessageShell>
-  );
-}
-
-// NOTA: o polling de jobs em background agora é feito pelo <JobProgressCard>,
-// que intercepta o `check_job` na própria mensagem do assistant e renderiza
-// progress bar + resultado inline (vale pra ybrax E bioshield specialists).
-// O antigo SpecialistJobPoller (hook use-pending-specialist-jobs) foi removido
-// pra não duplicar polling/mensagens.
 
 // Bridge: vive DENTRO do ChatProvider, conecta o evento waves:file-upload-complete
 // ao processMessage do useThread. Renderiza nada.
