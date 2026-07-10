@@ -10,7 +10,6 @@ import {
 } from "@openuidev/react-headless";
 import {
   Shell,
-  isChatEmpty,
   ThemeProvider,
 } from "@openuidev/react-ui";
 import { Renderer } from "@openuidev/react-lang";
@@ -19,11 +18,10 @@ import { Renderer } from "@openuidev/react-lang";
 import { isOpenUrlAllowed } from "../lib/open-url-allowlist";
 import { shadcnChatLibrary } from "../lib/shadcn-genui";
 import { AnalysisReport } from "../lib/shadcn-genui/components/analysis-report";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatComposer } from "./ChatComposer";
-import { ConversationLauncher, InputFormComposerGate, useInputFormGatePending } from "./ConversationLauncher";
+import { ConversationLauncher, InputFormComposerGate } from "./ConversationLauncher";
 import { UserMessageView } from "./UserMessageView";
-import { MessageExport } from "./MessageExport";
 import { NotificationBell } from "./NotificationBell";
 import { FilePreviewer } from "./FilePreviewer";
 import { ShareFileDialog } from "./ShareFileDialog";
@@ -74,10 +72,7 @@ import {
 } from "../lib/session-guard";
 import { installAuthInterceptor } from "../lib/fetch-interceptor";
 import { fetchTenantBranding, type TenantBranding } from "../lib/tenant";
-import { getKanbanCtx } from "../lib/kanban-context";
 import {
-  consumeCreateTask,
-  wasCreateTaskConsumed,
   setCreateTaskThreadKey,
 } from "../lib/createtask-consumed";
 import { setReportThreadKey } from "../lib/report-cache";
@@ -90,16 +85,17 @@ import {
 import {
   setAdminFlag,
   isAdmin,
-  messageTime,
   primeMessageTime,
-  fmtTime,
   extractUsage,
 } from "../lib/message-meta";
 import { isAdminUser } from "../lib/permissions";
 import { savePendingChatRequest } from "../lib/pending-chat-request";
 
-import { pickIcon, platformStartersFor, stripNullArgs, parseAnalysisReport, execReportToOpenui } from "./chat/starter-utils";
+import { platformStartersFor, stripNullArgs, parseAnalysisReport, execReportToOpenui } from "./chat/starter-utils";
 import { tryWorkflowViewShortcut, syntheticSse, appendTaskCard } from "./chat/WorkflowShortcuts";
+import { parseCreateTaskDirective, CreateTaskTrigger } from "./chat/CreateTaskTrigger";
+import { AssistantMessageShell, MessageMeta } from "./chat/AssistantMessageShell";
+import { WelcomeArea } from "./chat/WelcomeArea";
 import { getEnvironmentLabel } from "../config/env";
 import { personaLabel } from "../lib/permissions";
 import { useTheme } from "../hooks/use-system-theme";
@@ -121,143 +117,6 @@ interface ChatPageProps {
 // bolha de chat simples.
 const OPENUI_PATTERN = /\b(root\s*=|Card\s*\(|CardHeader\s*\(|TextContent\s*\(|Table\s*\(|TagBlock\s*\(|Alert\s*\(|FollowUpItem\s*\(|(?:Pie|Bar|Line)Chart\s*\(|ListBlock\s*\(|Accordion\s*\()/;
 
-
-// Diretiva `open_create_task: {"workflow_id":..,"stage_id":..}` — o agente emite
-// só isso quando o user pede pra criar tarefa; abrimos o modal nativo direto.
-function parseCreateTaskDirective(
-  content: string,
-): { workflowId?: number; stageId?: number } | null {
-  const t = content.trim();
-  if (!t.startsWith("open_create_task")) return null;
-  // Se abriu `{` mas ainda não fechou (streaming), espera o JSON completar.
-  if (t.includes("{") && !t.includes("}")) return null;
-  const m = t.match(/\{[\s\S]*\}/);
-  let workflowId: number | undefined;
-  let stageId: number | undefined;
-  if (m) {
-    try {
-      const o = JSON.parse(m[0]) as { workflow_id?: unknown; stage_id?: unknown };
-      if (o.workflow_id != null) workflowId = Number(o.workflow_id);
-      if (o.stage_id != null) stageId = Number(o.stage_id);
-    } catch {
-      /* JSON inválido — usa o contexto do kanban */
-    }
-  }
-  return { workflowId, stageId };
-}
-
-// Abre o modal de criação ao montar (dispara waves:create-task). Usa o workflow
-// da diretiva OU, se ausente, o do kanban exibido por último (determinístico).
-//
-// A diretiva é uma MENSAGEM persistida no histórico — então este componente
-// re-monta a cada reload/troca de chat. Sem guarda, o modal reabriria sozinho
-// (zumbi). `consumeCreateTask` marca cada diretiva (thread+conteúdo) → auto-abre
-// SÓ na 1ª vez (mensagem ao vivo); depois vira um link de reabrir manual.
-function CreateTaskTrigger({
-  directive,
-  content,
-}: {
-  directive: { workflowId?: number; stageId?: number };
-  content: string;
-}) {
-  const wf = directive.workflowId ?? getKanbanCtx().workflowId;
-  const st = directive.stageId ?? getKanbanCtx().stageId;
-  // Leitura pura no render (sem efeito colateral): a diretiva já foi consumida?
-  const fresh = !wasCreateTaskConsumed(content);
-  const open = () =>
-    window.dispatchEvent(
-      new CustomEvent("waves:create-task", {
-        detail: { workflowId: wf, stageId: st },
-      }),
-    );
-  useEffect(() => {
-    // Re-checa dentro do efeito: cobre o double-invoke do StrictMode e garante
-    // exatamente UM auto-open por diretiva. Sem workflow o modal mostra o seletor.
-    if (wasCreateTaskConsumed(content)) return;
-    consumeCreateTask(content);
-    open();
-    // só no mount; a decisão de abrir mora na guarda acima
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return (
-    <div
-      className="assistant-plain-text"
-      style={{ padding: "0.75rem 1rem", opacity: 0.8 }}
-    >
-      {fresh ? (
-        "Abrindo o formulário de nova tarefa…"
-      ) : (
-        <button
-          type="button"
-          onClick={open}
-          style={{
-            background: "none",
-            border: "none",
-            padding: 0,
-            color: "inherit",
-            font: "inherit",
-            textDecoration: "underline",
-            cursor: "pointer",
-          }}
-        >
-          Abrir formulário de nova tarefa
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Container único por mensagem assistant (alinha ao shell padrão). Sem isto,
-// Renderer + MessageMeta viram dois filhos diretos da lista — o rodapé vira o
-// :last-child e herda min-height ~100dvh do scroll-anchor da lib OpenUI.
-function AssistantMessageShell({
-  children,
-  meta,
-}: {
-  children: ReactNode;
-  meta?: ReactNode;
-}) {
-  return (
-    <div className="openui-shell-thread-message-assistant openui-shell-thread-message-assistant--without-logo waves-assistant-message">
-      <div className="openui-shell-thread-message-assistant__content">
-        <div className="msg-actions-top">
-          <MessageExport />
-        </div>
-        {children}
-        {meta}
-      </div>
-    </div>
-  );
-}
-
-// Rodapé de cada mensagem: horário + (admin) tokens da geração. Mensagem
-// nativa (sem chamada LLM) não tem usage → mostra "0 tok".
-function MessageMeta({
-  id,
-  timestamp,
-  usage,
-}: {
-  id?: string;
-  timestamp?: number;
-  usage: ReturnType<typeof extractUsage>["usage"];
-}) {
-  const threadId = useContext(ActiveThreadContext);
-  return (
-    <div className="waves-assistant-message__meta">
-      <span>{fmtTime(messageTime(id, timestamp))}</span>
-      {isAdmin() && (
-        <span title="Tokens da geração (P=prompt, C=completion)">
-          🪙 {usage ? `${usage.t} tok · P:${usage.p}/C:${usage.c}` : "0 tok"}
-        </span>
-      )}
-      {isAdmin() && (
-        <span className="waves-meta-debug" title={`Thread: ${threadId}\nMsg: ${id || "—"}`}>
-          🧵 {threadId?.slice(0, 8)} · #{id?.slice(0, 8) || "—"}
-        </span>
-      )}
-    </div>
-  );
-}
 
 function GenUIAssistantMessage({
   message,
@@ -409,66 +268,6 @@ function GenUIAssistantMessage({
     />
     {jobCard}
     </AssistantMessageShell>
-  );
-}
-
-// Welcome interno: composer central + starters discretos abaixo. Renderiza
-// apenas quando o chat está vazio (sem mensagens). O `Shell.WelcomeScreen`
-// quando recebe `starters` + título cria layout: título → composer central →
-// starters em pílulas embaixo (variant "short").
-// Passamos `children` pra Shell.WelcomeScreen DE PROPÓSITO: assim ela NÃO
-// adiciona a classe `--with-composer`, e a regra de CSS da lib que esconde o
-// composer da thread no estado vazio não dispara — ou seja, nosso ChatComposer
-// (único, com botão "+") fica visível tanto na welcome quanto na conversa.
-// Renderizamos título + starters aqui; o input fica no ChatComposer embaixo.
-function WelcomeArea({
-  starters,
-  title,
-  subtitle,
-  agent,
-}: {
-  starters: ProfileStarter[];
-  title?: string;
-  subtitle?: string;
-  agent?: AgentItem;
-}) {
-  const messages = useThread((s) => s.messages);
-  const isLoadingMessages = useThread((s) => s.isLoadingMessages);
-  const processMessage = useThread((s) => s.processMessage);
-  const isRunning = useThread((s) => s.isRunning);
-  const formPending = useInputFormGatePending(agent);
-  if (formPending) return null;
-  if (!isChatEmpty({ isLoadingMessages, messages })) return null;
-
-  return (
-    <Shell.WelcomeScreen>
-      <div className="waves-welcome">
-        {/* Título/subtítulo vêm da PLATAFORMA (page_title/page_subtitle).
-            Se vier null/vazio → fica em branco (sem texto de fallback). */}
-        {title?.trim() && (
-          <h2 className="waves-welcome__title">{title.trim()}</h2>
-        )}
-        {subtitle?.trim() && (
-          <p className="waves-welcome__desc">{subtitle.trim()}</p>
-        )}
-        {starters.length > 0 && (
-          <div className="waves-welcome__starters">
-            {starters.map((s, i) => (
-              <button
-                key={`${s.displayText}-${i}`}
-                type="button"
-                className="waves-welcome__starter"
-                disabled={isRunning}
-                onClick={() => processMessage({ role: "user", content: s.prompt })}
-              >
-                <span aria-hidden>{pickIcon(s.displayText)}</span>
-                <span>{s.displayText}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </Shell.WelcomeScreen>
   );
 }
 
