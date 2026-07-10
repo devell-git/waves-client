@@ -4,8 +4,6 @@ import {
   ChatProvider,
   openAIAdapter,
   openAIMessageFormat,
-  useThread,
-  useThreadList,
   type Message,
 } from "@openuidev/react-headless";
 import {
@@ -42,20 +40,9 @@ import { ThinkingIndicator } from "./ThinkingIndicator";
 import {
   createThreadApiAdapters,
   newThreadId,
-  getThreadMessages,
-  toOpenUIMessage,
   setThreadGateway,
 } from "../api/threads";
 import { ActiveThreadContext } from "../lib/active-thread-context";
-import {
-  setRunningThread,
-  clearRunningThread,
-  markBackgroundRun,
-  clearBackgroundRun,
-  useBackgroundJobWatcher,
-  useBackgroundRunWatcher,
-} from "../lib/active-runs";
-import type { ThreadMessage } from "../api/threads";
 import { ThreadErrorRecovery } from "./ThreadErrorRecovery";
 import { clearSession } from "../lib/session";
 import {
@@ -69,7 +56,7 @@ import {
   setCreateTaskThreadKey,
 } from "../lib/createtask-consumed";
 import { setReportThreadKey } from "../lib/report-cache";
-import { loadShortcuts, saveShortcutExchange } from "../lib/shortcut-history";
+import { saveShortcutExchange } from "../lib/shortcut-history";
 import {
   ensureToolProvider,
   setActiveAgentId,
@@ -77,7 +64,6 @@ import {
 import {
   setAdminFlag,
   isAdmin,
-  primeMessageTime,
 } from "../lib/message-meta";
 import { isAdminUser } from "../lib/permissions";
 import { savePendingChatRequest } from "../lib/pending-chat-request";
@@ -86,6 +72,16 @@ import { platformStartersFor } from "./chat/starter-utils";
 import { tryWorkflowViewShortcut, syntheticSse, appendTaskCard } from "./chat/WorkflowShortcuts";
 import { WelcomeArea } from "./chat/WelcomeArea";
 import { GenUIAssistantMessage } from "./chat/GenUIAssistantMessage";
+import {
+  FileUploadBridge,
+  ThreadSelector,
+  RunTracker,
+  BackgroundJobWatcher,
+  ScrollAnchorOnOpen,
+  BackgroundRunWatcher,
+  ChatAppendListener,
+} from "./chat/ChatBridges";
+import { ThreadRestorer } from "./chat/ThreadRestorer";
 import { getEnvironmentLabel } from "../config/env";
 import { personaLabel } from "../lib/permissions";
 import { useTheme } from "../hooks/use-system-theme";
@@ -96,220 +92,6 @@ interface ChatPageProps {
   onLogout: () => void;
 }
 
-
-// Bridge: vive DENTRO do ChatProvider, conecta o evento waves:file-upload-complete
-// ao processMessage do useThread. Renderiza nada.
-function FileUploadBridge({ bridgeRef }: { bridgeRef: React.MutableRefObject<((files: any[]) => void) | null> }) {
-  const sendMsg = useThread((s) => s.processMessage);
-  useEffect(() => {
-    bridgeRef.current = (files) => {
-      const parts: Array<
-        | { type: "text"; text: string }
-        | { type: "binary"; mimeType: string; url: string; filename: string }
-      > = [];
-      for (const f of files) {
-        parts.push({ type: "binary", mimeType: f.mimeType, url: f.url, filename: f.filename });
-      }
-      sendMsg({ role: "user", content: parts });
-    };
-    return () => { bridgeRef.current = null; };
-  }, [sendMsg, bridgeRef]);
-  return null;
-}
-
-// Auto-sincroniza o threadId selecionado quando o ChatProvider monta —
-// chama selectThread após fetchThreadList carregar pela primeira vez.
-function ThreadSelector({ targetThreadId }: { targetThreadId: string }) {
-  const selectedId = useThreadList((s) => s.selectedThreadId);
-  const selectThread = useThreadList((s) => s.selectThread);
-  const threads = useThreadList((s) => s.threads);
-  const isLoading = useThreadList((s) => s.isLoadingThreads);
-
-  useEffect(() => {
-    if (isLoading) return;
-    if (selectedId === targetThreadId) return;
-    // só seleciona se a thread já existe na lista — senão deixa o user iniciar
-    // uma conversa nova (que vai criar a thread ao mandar a primeira message)
-    if (threads.some((t) => t.id === targetThreadId)) {
-      selectThread(targetThreadId);
-    }
-  }, [isLoading, selectedId, targetThreadId, threads, selectThread]);
-
-  return null;
-}
-
-// Insere uma mensagem (assistant) no chat sem passar pelo LLM. Usado pra
-// devolver no chat o feedback de ações nativas (ex.: "✅ Tarefa criada"),
-// disparado via CustomEvent `waves:chat-append`. Precisa estar DENTRO do
-// ChatProvider (os modais ficam fora e não acessam `appendMessages`).
-// Espelha o `isRunning` (global da lib) no active-runs, capturando a thread
-// ORIGINADORA na borda de subida do run — base pra escopar o "pensando" e o
-// badge por thread (#828). Limpa quando o run termina (inclui o cancel ao
-// trocar/abrir chat).
-function RunTracker({ activeThreadId }: { activeThreadId: string }) {
-  const isRunning = useThread((s) => s.isRunning);
-  const wasRunning = useRef(false);
-  const runOriginRef = useRef<string>("");
-  useEffect(() => {
-    if (isRunning && !wasRunning.current) {
-      setRunningThread(activeThreadId);
-      // #829 — o gateway persiste a resposta mesmo se você navegar; registra o
-      // run em background pra manter o badge na thread e detectar a conclusão.
-      markBackgroundRun(activeThreadId);
-      runOriginRef.current = activeThreadId;
-    } else if (!isRunning && wasRunning.current) {
-      clearRunningThread();
-      // #829 — se terminou e você AINDA está na thread de origem = conclusão em
-      // FOREGROUND (resposta já visível) → limpa o badge na hora. Se você NAVEGOU
-      // (origem ≠ ativa), deixa o bg-run pro watcher detectar a conclusão real.
-      if (runOriginRef.current && runOriginRef.current === activeThreadId) {
-        clearBackgroundRun(runOriginRef.current);
-      }
-      runOriginRef.current = "";
-    }
-    wasRunning.current = isRunning;
-  }, [isRunning, activeThreadId]);
-  return null;
-}
-
-// Vigia em background os check_jobs pendentes e limpa o badge ao terminar (#828).
-function BackgroundJobWatcher() {
-  useBackgroundJobWatcher();
-  return null;
-}
-
-// #804 — ancora o scroll no FIM (última mensagem visível, estilo WhatsApp) ao
-// ABRIR/HIDRATAR uma thread. O scrollVariant="always" da lib dispara o scroll de
-// carga cedo demais (antes do setMessages assíncrono do ThreadRestorer popular o
-// DOM) e trava; aqui ancoramos INSTANTANEAMENTE quando as mensagens chegam, uma
-// vez por abertura de thread. Durante streaming/nova msg quem cuida é o "always".
-function ScrollAnchorOnOpen({ threadKey }: { threadKey: string }) {
-  const messages = useThread((s) => s.messages);
-  const isRunning = useThread((s) => s.isRunning);
-  const anchoredFor = useRef<string>("");
-  useEffect(() => {
-    if (!threadKey || isRunning) return;
-    // Troca de thread limpa as mensagens (setMessages([])) antes de hidratar:
-    // reseta o latch pra re-ancorar quando as novas mensagens chegarem.
-    if (messages.length === 0) {
-      anchoredFor.current = "";
-      return;
-    }
-    if (anchoredFor.current === threadKey) return; // já ancorou esta abertura
-    const el = document.querySelector<HTMLElement>(".openui-shell-thread-scroll-area");
-    if (!el) return;
-    anchoredFor.current = threadKey;
-    // rAF: garante que o layout das mensagens já foi aplicado. Instantâneo (sem animação).
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }, [messages, threadKey, isRunning]);
-  return null;
-}
-
-// #829 — vigia runs em background (thread deixada rodando ao navegar): quando o
-// gateway termina e persiste a resposta, limpa o badge e, se a thread é a ativa,
-// recarrega as mensagens pra mostrar o resultado sem o usuário ter de recarregar.
-function BackgroundRunWatcher({
-  profileId,
-  threadKeyPrefix,
-  activeThreadId,
-}: {
-  profileId: string;
-  threadKeyPrefix: string;
-  activeThreadId: string;
-}) {
-  const setMessages = useThread((s) => s.setMessages);
-  const onActiveThreadDone = useCallback(
-    (msgs: ThreadMessage[]) => {
-      const conv = msgs.map(toOpenUIMessage).filter(Boolean) as Message[];
-      if (conv.length) setMessages(conv);
-    },
-    [setMessages],
-  );
-  useBackgroundRunWatcher({ profileId, threadKeyPrefix, activeThreadId, onActiveThreadDone });
-  return null;
-}
-
-function ChatAppendListener() {
-  const appendMessages = useThread((s) => s.appendMessages);
-  useEffect(() => {
-    const h = (e: Event) => {
-      const content = (e as CustomEvent<{ content: string }>).detail?.content;
-      if (typeof content === "string" && content) {
-        appendMessages({ id: crypto.randomUUID(), role: "assistant", content });
-      }
-    };
-    window.addEventListener("waves:chat-append", h);
-    return () => window.removeEventListener("waves:chat-append", h);
-  }, [appendMessages]);
-  return null;
-}
-
-
-// Restaura o chat ao recarregar a página. O backend (state.db do Hermes) guarda
-// as mensagens por sessão `waves-user-<id>::<thread>`; aqui buscamos as do thread
-// ativo e semeamos o ChatProvider via `setMessages`. Independe da sidebar/lista
-// de threads — só do threadId persistido (localStorage) + o user id da sessão.
-function ThreadRestorer({
-  profileId,
-  fullThreadKey,
-}: {
-  profileId: string;
-  fullThreadKey: string;
-}) {
-  const setMessages = useThread((s) => s.setMessages);
-  const restoredKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!fullThreadKey || restoredKeyRef.current === fullThreadKey) return;
-    const isSwitch = restoredKeyRef.current !== null; // troca de conversa (não 1º load)
-    restoredKeyRef.current = fullThreadKey;
-    // Ao TROCAR de conversa, limpa imediatamente pra não mostrar as mensagens
-    // do thread anterior enquanto o novo carrega.
-    if (isSwitch) setMessages([]);
-    let cancelled = false;
-    (async () => {
-      let msgs: Awaited<ReturnType<typeof getThreadMessages>> = [];
-      try {
-        msgs = await getThreadMessages(profileId, fullThreadKey);
-      } catch {
-        /* sem histórico / rede — segue só com os atalhos locais (se houver) */
-      }
-      if (cancelled) return;
-      // Mescla o histórico do gateway com as mensagens de ATALHO (Gantt/kanban)
-      // guardadas em localStorage — elas não passam pelo gateway, então não
-      // estão no state.db. Ordena por timestamp; dedup por conteúdo (caso um
-      // turno real tenha persistido a mesma UI depois).
-      const norm = (t: number) => (t && t < 1e12 ? t * 1000 : t || 0);
-      const gwContents = new Set(msgs.map((m) => m.content));
-      const items: Array<{ ts: number; msg: Message }> = [];
-      msgs.forEach((m) => {
-        const om = toOpenUIMessage(m);
-        if (om) items.push({ ts: norm(m.timestamp), msg: om });
-      });
-      for (const s of loadShortcuts(fullThreadKey)) {
-        if (gwContents.has(s.content)) continue;
-        const scId = `sc-${s.ts}-${s.role}`;
-        // #830 — atalhos não passam por toOpenUIMessage; semeia o horário real
-        // pra não cair em Date.now() no reload.
-        primeMessageTime(scId, s.ts);
-        items.push({
-          ts: s.ts,
-          msg: { id: scId, role: s.role, content: s.content } as Message,
-        });
-      }
-      if (cancelled || items.length === 0) return;
-      items.sort((a, b) => a.ts - b.ts);
-      setMessages(items.map((i) => i.msg));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [profileId, fullThreadKey, setMessages]);
-
-  return null;
-}
 
 export function ChatPage({ session, onLogout }: ChatPageProps) {
   const mode = useTheme();
