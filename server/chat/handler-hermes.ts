@@ -1,0 +1,665 @@
+/**
+ * Handler do branch Hermes (Steve via api_server local).
+ *
+ * Extraído de server/chat.ts (split fatia 8).
+ *
+ * O Steve já tem SOUL/identity + MCP bioshield + skills. Aqui injetamos
+ * as 26 tools NATIVAS da Waves (geradas de /api/openui/spec) como funções
+ * OpenAI no request. Quando o Steve precisar de dados da Waves
+ * (workflows/tasks/funnels/boards), ele chama uma dessas tools — o Express
+ * executa via /api/openui/tools/<name> e devolve.
+ *
+ * Spec é a ÚNICA fonte da verdade: tools custom hardcoded da Waves
+ * deprecadas (continuam só nos branches codex/openai como fallback).
+ */
+import { HERMES_STREAM_TIMEOUT_MS } from "./hermes-gateway.js";
+import { truncateOldAssistantUI } from "./message-utils.js";
+import { sseToolCallStart, sseToolCallArgs } from "./sse-helpers.js";
+import type { UserInfo, UserScopePayload } from "./types.js";
+import {
+  ensureFollowUps,
+} from "../openui-postprocess.js";
+import { buildWavesPromptForHermes } from "../waves-prompt.js";
+import type { WavesSession } from "../waves-client.js";
+import {
+  buildOpenAIToolsFromSpec,
+} from "../openui-spec.js";
+import { getActiveTenant } from "../tenants.js";
+import { setCached as setFormCached } from "../form-cache.js";
+import { clearProgress, setProgress } from "../tool-progress.js";
+import {
+  backendForPort,
+  consultToolToProfile,
+  getLatestJob,
+  isConsultTool,
+  rememberJobBackend,
+} from "../specialist-jobs.js";
+import { recordJobAnchor } from "../specialist-job-anchors.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface HandleHermesOptions {
+  apiKey: string;
+  baseURL: string; // ex.: http://127.0.0.1:18860/v1
+  messages: unknown[];
+  scopeContext?: string;
+  user?: UserInfo;
+  wavesSession: WavesSession;
+  userScope?: UserScopePayload | null;
+  /** Pede usage de tokens no stream (só admin). */
+  wantUsage?: boolean;
+  /**
+   * Trigger reconhecido pelo `form-cache` (`__form_cnpj__` / `__form_cpf__`).
+   * Quando presente, ao final do stream a resposta agregada é gravada em cache
+   * pra que próximas chamadas com a mesma mensagem sirvam em <50ms.
+   */
+  cacheTrigger?: string;
+  /**
+   * UUID da thread/conversa atual no waves_client. Sufixa o sessionId enviado
+   * pro Hermes — habilita múltiplas conversas paralelas por user.
+   */
+  threadId?: string;
+  /** Override de reasoning_effort → header X-Hermes-Reasoning-Effort. */
+  reasoningEffort?: string;
+  /**
+   * ID do profile Hermes resolvido (gw.id). Usado pelo hard path pra gravar o
+   * token do usuário na pasta do PRÓPRIO profile (não vaza token entre profiles).
+   */
+  profileId?: string;
+  /** agent_id (do login) → header X-Hermes-Agent-Id pro gateway gravar na web-session. */
+  agentId?: number | string;
+}
+
+// ---------------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------------
+
+export async function handleChatRequestHermes(
+  opts: HandleHermesOptions,
+): Promise<Response> {
+  const { apiKey, baseURL, messages, scopeContext = "", user, wavesSession: _wavesSession, userScope: _userScope, cacheTrigger, threadId, reasoningEffort, profileId: _profileId, agentId, wantUsage } = opts;
+
+  const t0 = Date.now();
+  const elapsed = () => `${Date.now() - t0}ms`;
+  console.log(`[chat:timing] ${elapsed()} - handler start (user=${user?.id ?? "anon"}, thread=${threadId ?? "—"})`);
+
+  // Token do usuário → MCP: NÃO gravamos mais o web-sessions daqui. O GATEWAY
+  // Hermes persiste o Bearer (que ele já recebe no Authorization) em
+  // state/web-sessions/<id>.json no _check_auth — apps desacopladas, o client
+  // não toca o FS do Hermes. (ver hermes-patches: _persist_web_session.)
+
+  // 1. (REMOVIDO 2026-05-26) Antes carregava spec OpenUI da Waves a cada
+  //    request pra montar `toolsHint` no system_prompt. Mas:
+  //    (a) Hermes Gateway IGNORA o campo `tools` do body OpenAI (arquitetura
+  //        MCP-style — usa próprios toolsets + plugins), então o array de
+  //        tools NUNCA chegava ao agente.
+  //    (b) O fetch síncrono à Waves (sem timeout, sem cache-on-failure)
+  //        adicionava 0.5-60s ao TTFB de cada `/api/chat`. Quando a Waves
+  //        retornava 429 ou ficava lenta, todos os chats travavam.
+  //    O `toolsHint` (texto que listava tools nativas) sobrava apenas como
+  //    dica no prompt — agora o Steve recebe a referência completa via
+  //    /home/bot/.hermes/shared-knowledge/waves/api-reference/BABBLE_API.md
+  //    (citado no SOUL §3), que é fonte estável e versionada.
+  const tools: ReturnType<typeof buildOpenAIToolsFromSpec> = [];
+  const toolsSchemaForAPI: Array<{
+    type: "function";
+    function: { name: string; description: string; parameters: unknown };
+  }> = [];
+  const toolsHint = "";
+
+  // 2. Limpa mensagens
+  const cleanMessages = truncateOldAssistantUI(
+    (messages as Array<Record<string, unknown>>)
+      .filter((m) => m.role !== "tool")
+      .map((m) => {
+        if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+          const { tool_calls: _tc, ...rest } = m;
+          return rest;
+        }
+        return m;
+      }),
+  );
+
+  // 3. Examples dinâmicos: kanban/funnel renderizados com DADOS REAIS do user.
+  //    Steve vê estrutura com ids/nomes próprios → copia padrão natural em vez
+  //    de gerar com dados fake. Cache 5min por user_id.
+  // (REMOVIDO 2026-05-26) buildDynamicExamples fazia 2 fetches serializados à
+  // Waves (kanban + funnel) a cada request sem cache de falha — somava ao
+  // TTFB. Os exemplos eram úteis pro agente ver estrutura de dados reais, mas
+  // não vitais: Steve consulta a Waves ao vivo quando precisa.
+  const dynamicExamples = "";
+
+  // 4. System prompt: library prompt (single-source) + scopeContext (user inventory)
+  //    + toolsHint (26 tools da Waves) + dynamicExamples (kanban/funnel real).
+  const systemPrompt =
+    buildWavesPromptForHermes() + scopeContext + toolsHint + dynamicExamples;
+
+  // 4. Session-id por user + thread.
+  //
+  // Cada conversa nova no waves_client tem um threadId próprio (UUID gerado
+  // no frontend). Aqui montamos `<userPrefix>::<threadId>` — assim o Hermes
+  // mantém sessions distintas pra cada conversa, e o histórico fica acessível
+  // por thread (via `/api/threads/:id/messages`).
+  //
+  // (HARDENING 2026-05-26) threadId "ephemeral" / vazio / "default" cai num
+  // bucket compartilhado entre todas as conversas — vimos isso explodir pra
+  // 116 mensagens/142k tokens, disparando Preflight compression em toda
+  // request e adicionando 9-120s de latência. Detectamos esses casos e
+  // geramos um UUID por-request pra forçar isolamento.
+  // Vincula a sessão ao TENANT (resolvido por host via ALS) — assim o mesmo
+  // user-id em tenants diferentes não compartilha sessão/histórico no gateway.
+  const tenantId = getActiveTenant().id;
+  const userPrefix =
+    user?.id != null ? `waves-${tenantId}-user-${user.id}` : `waves-${tenantId}-anon`;
+  const SHARED_BUCKETS = new Set(["", "ephemeral", "default", "shared", "main"]);
+  let safeThreadId = threadId;
+  if (!safeThreadId || SHARED_BUCKETS.has(safeThreadId.trim().toLowerCase())) {
+    safeThreadId = `ephem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    console.warn(`[chat] threadId ausente/shared (${threadId ?? "—"}) — usando ${safeThreadId}`);
+  }
+  const sessionId = `${userPrefix}::${safeThreadId}`;
+
+  // 5. Loop multi-turn manual via fetch. Filtra eventos non-standard do
+  //    Hermes (event: hermes.tool.progress) que quebrariam o SDK OpenAI.
+  const encoder = new TextEncoder();
+  let controllerClosed = false;
+  const MAX_TURNS = 6;
+
+  const readable = new ReadableStream({
+    start(controller) {
+      const enqueue = (data: Uint8Array) => {
+        if (controllerClosed) return;
+        try {
+          controller.enqueue(data);
+        } catch {
+          /* closed */
+        }
+      };
+      // Heartbeat SSE: linha-comentário a cada 10s mantém o socket vivo no
+      // Safari iOS / Chrome mobile, que cancelam fetches quando passa muito
+      // tempo entre chunks (visto turnos do Hermes com 30-50s de gap entre
+      // tool result e próxima geração). Cliente ignora linhas começando com
+      // `:` (SSE spec). Limpo no close.
+      const heartbeat = setInterval(() => {
+        if (controllerClosed) return;
+        enqueue(encoder.encode(": keepalive\n\n"));
+      }, 1_000);
+      const close = () => {
+        if (controllerClosed) return;
+        controllerClosed = true;
+        clearInterval(heartbeat);
+        try {
+          controller.close();
+        } catch {
+          /* closed */
+        }
+      };
+
+      // Lembrete de sintaxe openui-lang inserido como mensagem `system` LOGO
+      // ANTES da última mensagem do user. O catálogo completo já vai no system
+      // prompt (referência), mas fica "longe" da pergunta — modelos seguem
+      // melhor o que está próximo da resposta (saliência/recência). Esse
+      // lembrete curto na posição saliente faz o agente usar a sintaxe exata
+      // (Slice/Series posicionais, variantes válidas) em vez do prior comum de
+      // libs de chart (label=/value=/color=/data=). Vale pra todos os profiles
+      // waves — a library shadcn-genui é a mesma.
+      const RENDER_SYNTAX_REMINDER =
+        "Lembrete de sintaxe openui-lang (siga EXATAMENTE — é o único formato que renderiza; catálogo completo já está no system prompt). " +
+        "Gráficos: PieChart([slices], donut?) e RadialChart([slices]) recebem Slice(category, value) posicional — NUNCA label=/value=/color=. " +
+        "BarChart/LineChart/AreaChart(labels, [series], variant?, xLabel?, yLabel?) e RadarChart(labels, [series]) recebem Series(category, values) (values = lista de números). " +
+        "variant de BarChart só 'grouped'|'stacked'. Gráficos NÃO têm título como argumento (título vai no CardHeader). " +
+        "Tag(text, variant) e Badge: variant só default|secondary|destructive|outline|ghost (NUNCA info/success/warning — verde→secondary, vermelho→destructive). " +
+        "Kanban/board: Kanban([colunas]) + KanbanColumn(name, color?, count?, [cards]) + KanbanCard(title, badges?, progress?, responsibleName?, tags?, id?) — NUNCA Columns/Column nem Card pra montar kanban. " +
+        "Sequência/etapas/wizard: Steps([itens], currentStep?, title?) + StepsItem(title, details?, status?) (status pending|in_progress|completed|blocked) — não use Accordion pra isso. " +
+        "Abas: Tabs([itens], default?) + TabItem(value, trigger, [conteúdo]). " +
+        "Use apenas nomes reais de componentes (nada de CardBody, Chart, KPI, DataPoint, Markdown, Columns, Column). " +
+        "FORMATO (obrigatório): emita openui-lang CRU, SEM cerca ``` nem bloco de código. UM statement por linha no estilo referência — `root = Card([a, b, c])` na 1ª linha e cada componente na sua própria linha (`a = CardHeader(...)`, `s1 = Slice(...)`). NUNCA aninhe componentes inline espalhados por várias linhas. Arrays (ex: rows do Table) ficam INLINE no argumento (`Table(columns=[...], rows=[[...],[...]])`) ou numa ÚNICA linha — nunca quebrados em várias linhas. badges e tags são listas de STRINGS (`badges=[\"Alta\"]`), nunca Badge()/Tag().";
+
+      // índice da última mensagem `user` — inserimos o lembrete imediatamente
+      // antes dela. Se não houver user (raro), o lembrete vai no fim.
+      let _lastUserIdx = -1;
+      for (let i = cleanMessages.length - 1; i >= 0; i--) {
+        if ((cleanMessages[i] as Record<string, unknown>).role === "user") {
+          _lastUserIdx = i;
+          break;
+        }
+      }
+      const conversation: Array<Record<string, unknown>> = [
+        { role: "system", content: systemPrompt },
+      ];
+      cleanMessages.forEach((m, i) => {
+        if (i === _lastUserIdx) {
+          conversation.push({ role: "system", content: RENDER_SYNTAX_REMINDER });
+        }
+        conversation.push(m);
+      });
+      if (_lastUserIdx === -1) {
+        conversation.push({ role: "system", content: RENDER_SYNTAX_REMINDER });
+      }
+
+      const executors = Object.fromEntries(
+        tools.map((t) => [t.function.name, t.function.function]),
+      );
+
+      let totalAssistantContent = "";
+      let toolCallIdx = 0;
+      // Tools `consult_*` (Vigia/Cronos/…) vistas no progress deste request —
+      // o gateway executa o sub-agent internamente e NÃO devolve o job_id no
+      // stream, então detectamos a chamada aqui e buscamos o job_id no .db pra
+      // injetar o `check_job` (card "Vigia analisando…") de forma determinística.
+      const consultToolsSeen = new Set<string>();
+      // Backend de specialist do assistente ATUAL — resolvido pela PORTA do
+      // gateway (extraída do baseURL, ex.: http://127.0.0.1:18877 → 18877).
+      // Define qual rendered_api consultar/rotear e como mapear tool → profile.
+      // Porta desconhecida/ausente → backend default (Steve).
+      let gatewayPort: number | undefined;
+      try {
+        const pStr = new URL(baseURL ?? "").port;
+        gatewayPort = pStr ? Number(pStr) : undefined;
+      } catch {
+        gatewayPort = undefined;
+      }
+      const specialistBackend = backendForPort(gatewayPort);
+      // Acumula tokens da geração (somados entre turnos do loop).
+      let usagePrompt = 0;
+      let usageCompletion = 0;
+
+      (async () => {
+        try {
+          console.log(`[chat:timing] ${elapsed()} - opening upstream to Hermes (${baseURL})`);
+          for (let turn = 0; turn < MAX_TURNS; turn++) {
+            const tUp = Date.now();
+            const upstream = await fetch(`${baseURL}/chat/completions`, {
+              method: "POST",
+              // Guarda contra socket pendurado (upstream que nunca responde/fecha).
+              // Generoso de propósito: uma geração real com tools pode levar minutos,
+              // então NÃO cortamos streams legítimos — só conexões travadas.
+              signal: AbortSignal.timeout(HERMES_STREAM_TIMEOUT_MS),
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                Accept: "text/event-stream",
+                "X-Hermes-Session-Id": sessionId,
+                ...(reasoningEffort ? { "X-Hermes-Reasoning-Effort": reasoningEffort } : {}),
+                ...(agentId != null && agentId !== "" ? { "X-Hermes-Agent-Id": String(agentId) } : {}),
+              },
+              body: JSON.stringify({
+                model: process.env.HERMES_MODEL || "hermes-agent",
+                messages: conversation,
+                tools: toolsSchemaForAPI.length > 0 ? toolsSchemaForAPI : undefined,
+                stream: true,
+                // Usage (tokens) só quando admin pediu — evita custo pra todos.
+                ...(wantUsage ? { stream_options: { include_usage: true } } : {}),
+              }),
+            });
+
+            if (!upstream.ok || !upstream.body) {
+              const text = await upstream.text().catch(() => "(sem body)");
+              enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    error: `Hermes ${upstream.status}: ${text.slice(0, 300)}`,
+                  })}\n\n`,
+                ),
+              );
+              break;
+            }
+
+            console.log(`[chat:timing] ${elapsed()} - upstream connected turn=${turn} (fetch took ${Date.now() - tUp}ms, status ${upstream.status})`);
+
+            // Parse SSE stream linha-a-linha; filtra eventos non-standard,
+            // acumula tool_calls que vierem via delta.tool_calls.
+            const reader = upstream.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = "";
+            let assistantText = "";
+            const pendingToolCalls: Array<{
+              id: string;
+              name: string;
+              arguments: string;
+              index: number;
+            }> = [];
+            let finishReason: string | null = null;
+
+            // Tracker do tipo de evento SSE atual. O Hermes intercala chunks
+            // padrão (chat.completion.chunk em linhas "data: {...}") com
+            // eventos custom (`event: hermes.tool.progress` seguido de
+            // `data: {tool, label, status}`). Como SSE: a linha `event:` muda
+            // o tipo da próxima `data:`.
+            let nextEventType: string | null = null;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buf += decoder.decode(value, { stream: true });
+
+              const lines = buf.split("\n");
+              buf = lines.pop() ?? ""; // resto
+
+              for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line) {
+                  // Linha vazia = fim do bloco SSE. Reseta tipo de evento.
+                  nextEventType = null;
+                  continue;
+                }
+                if (line.startsWith("event:")) {
+                  nextEventType = line.slice(6).trim();
+                  continue;
+                }
+                if (!line.startsWith("data: ")) continue;
+
+                // Bloco hermes.tool.progress → atualiza buffer global pro
+                // ThinkingIndicator pollar via /api/chat/progress, e NÃO
+                // repassa pro frontend (não é chat.completion.chunk).
+                if (nextEventType === "hermes.tool.progress") {
+                  try {
+                    const p = JSON.parse(line.slice(6).trim()) as {
+                      tool?: string;
+                      emoji?: string;
+                      label?: string;
+                      toolCallId?: string;
+                      status?: string;
+                    };
+                    if (p.tool) {
+                      setProgress(sessionId, {
+                        tool: p.tool,
+                        emoji: p.emoji,
+                        label: p.label,
+                        toolCallId: p.toolCallId,
+                        status: p.status === "completed" ? "completed" : "running",
+                      });
+                      if (isConsultTool(p.tool, specialistBackend)) consultToolsSeen.add(p.tool);
+                    }
+                  } catch {
+                    // payload inválido — ignora
+                  }
+                  nextEventType = null;
+                  continue;
+                }
+                const payload = line.slice(6).trim();
+                if (payload === "[DONE]") continue;
+
+                let ev: {
+                  choices?: Array<{
+                    delta?: {
+                      content?: string;
+                      tool_calls?: Array<{
+                        index?: number;
+                        id?: string;
+                        function?: { name?: string; arguments?: string };
+                      }>;
+                    };
+                    finish_reason?: string | null;
+                  }>;
+                  usage?: {
+                    prompt_tokens?: number;
+                    completion_tokens?: number;
+                    input_tokens?: number;
+                    output_tokens?: number;
+                    total_tokens?: number;
+                    total?: number;
+                  };
+                };
+                try {
+                  ev = JSON.parse(payload);
+                } catch {
+                  continue;
+                }
+                // Bloco de usage (chunk sem choices, vem no fim quando
+                // include_usage). Acumula entre turnos.
+                if (ev.usage) {
+                  const prompt = Number(
+                    ev.usage.prompt_tokens ?? ev.usage.input_tokens ?? 0,
+                  );
+                  const completion = Number(
+                    ev.usage.completion_tokens ?? ev.usage.output_tokens ?? 0,
+                  );
+                  const total = Number(
+                    ev.usage.total_tokens ??
+                      ev.usage.total ??
+                      prompt + completion,
+                  );
+
+                  // Alguns provedores só retornam total_tokens no stream final.
+                  // Nesse caso, preserva a divisão conhecida (se houver) e evita
+                  // zerar o badge de tokens.
+                  usagePrompt += Number.isFinite(prompt) ? prompt : 0;
+                  usageCompletion += Number.isFinite(completion) ? completion : 0;
+                  if (
+                    usagePrompt + usageCompletion === 0 &&
+                    Number.isFinite(total) &&
+                    total > 0
+                  ) {
+                    usageCompletion += total;
+                  }
+                }
+                const choice = ev.choices?.[0];
+                if (!choice) continue;
+                const delta = choice.delta ?? {};
+                if (typeof delta.content === "string" && delta.content) {
+                  assistantText += delta.content;
+                  // Pass-through pro frontend (formato chat.completions.chunk)
+                  enqueue(
+                    encoder.encode(`data: ${JSON.stringify(ev)}\n\n`),
+                  );
+                }
+                if (Array.isArray(delta.tool_calls)) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0;
+                    if (!pendingToolCalls[idx]) {
+                      pendingToolCalls[idx] = {
+                        id: tc.id ?? `call_${turn}_${idx}`,
+                        name: tc.function?.name ?? "",
+                        arguments: "",
+                        index: idx,
+                      };
+                    }
+                    if (tc.function?.name) {
+                      pendingToolCalls[idx].name = tc.function.name;
+                    }
+                    if (typeof tc.function?.arguments === "string") {
+                      pendingToolCalls[idx].arguments += tc.function.arguments;
+                    }
+                    if (tc.id) pendingToolCalls[idx].id = tc.id;
+                  }
+                }
+                if (choice.finish_reason) {
+                  finishReason = choice.finish_reason;
+                }
+              }
+            }
+
+            totalAssistantContent += assistantText;
+
+            // Se não chamou tools, encerrou — sai do loop
+            if (pendingToolCalls.length === 0 || finishReason === "stop") {
+              break;
+            }
+
+            // Anota a mensagem do assistant + executa cada tool call → repassa
+            // resultado pro próximo turno.
+            const assistantMsg: Record<string, unknown> = {
+              role: "assistant",
+              content: assistantText || null,
+              tool_calls: pendingToolCalls.map((tc) => ({
+                id: tc.id,
+                type: "function",
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            };
+            conversation.push(assistantMsg);
+
+            for (const tc of pendingToolCalls) {
+              // Emite tool_call_start + args pro frontend ver a chamada
+              const tcId = `tc-${toolCallIdx}`;
+              enqueue(
+                sseToolCallStart(
+                  encoder,
+                  { id: tcId, function: { name: tc.name } },
+                  toolCallIdx,
+                ),
+              );
+
+              const exec = executors[tc.name];
+              let resultStr: string;
+              if (!exec) {
+                resultStr = JSON.stringify({
+                  error: true,
+                  message: `Tool '${tc.name}' não disponível na spec da Waves.`,
+                });
+              } else {
+                try {
+                  const args =
+                    tc.arguments && tc.arguments.length > 0
+                      ? JSON.parse(tc.arguments)
+                      : {};
+                  resultStr = await exec(args as Record<string, unknown>);
+                } catch (err) {
+                  resultStr = JSON.stringify({
+                    error: true,
+                    message: err instanceof Error ? err.message : String(err),
+                  });
+                }
+              }
+
+              enqueue(
+                sseToolCallArgs(
+                  encoder,
+                  { id: tcId, function: { arguments: tc.arguments || "{}" } },
+                  resultStr,
+                  toolCallIdx,
+                ),
+              );
+              toolCallIdx++;
+
+              conversation.push({
+                role: "tool",
+                tool_call_id: tc.id,
+                content: resultStr,
+              });
+            }
+          }
+
+          // FollowUps obrigatórios (segurança)
+          const { content: patched, appended } = ensureFollowUps(
+            totalAssistantContent,
+            {},
+          );
+          if (appended && patched.length > totalAssistantContent.length) {
+            const suffix = patched.slice(totalAssistantContent.length);
+            enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: "chatcmpl-followups",
+                  object: "chat.completion.chunk",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: suffix },
+                      finish_reason: null,
+                    },
+                  ],
+                })}\n\n`,
+              ),
+            );
+          }
+
+          // Popula cache de form trigger com a resposta agregada (após
+          // ensureFollowUps). Próximas requests com a mesma mensagem servem
+          // direto do cache. Cache invalida se SOUL.md mudar.
+          if (cacheTrigger) {
+            const finalContent = appended ? patched : totalAssistantContent;
+            setFormCached(cacheTrigger, finalContent);
+          }
+
+          // Limpa buffer de progress DESTA sessão — request finalizada,
+          // frontend não precisa mais mostrar tool em execução.
+          clearProgress(sessionId);
+
+          // Marcador de usage (tokens da geração) — o frontend extrai e mostra
+          // só pra admin. Vai como content num comentário HTML (o renderer e o
+          // parser openui-lang ignoram; o GenUIAssistantMessage tira na exibição).
+          if (usagePrompt > 0 || usageCompletion > 0) {
+            console.log(
+              `[chat:usage] thread=${safeThreadId} P:${usagePrompt} C:${usageCompletion} T:${usagePrompt + usageCompletion} (wantUsage=${wantUsage})`,
+            );
+            const marker = `\n<!--waves-usage:{"p":${usagePrompt},"c":${usageCompletion},"t":${usagePrompt + usageCompletion}}-->`;
+            enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: "chatcmpl-usage",
+                  object: "chat.completion.chunk",
+                  choices: [{ index: 0, delta: { content: marker }, finish_reason: null }],
+                })}\n\n`,
+              ),
+            );
+          } else if (wantUsage) {
+            console.log(
+              `[chat:usage] thread=${safeThreadId} 0 tok — sem usage (resposta nativa/sem chamada LLM ou gateway não reportou)`,
+            );
+          }
+
+          // Card de specialist (Vigia/Cronos/…): o agente nem sempre emite o
+          // marcador `check_job` no texto. Se um `consult_*` rodou neste request,
+          // busca o job recém-criado via rendered_api (HTTP) e injeta o marcador —
+          // o JobProgressCard monta sozinho (animação "analisando…" + auto-render
+          // quando o sub-agent volta). Determinístico, sem depender do LLM.
+          for (const tool of consultToolsSeen) {
+            const profile = consultToolToProfile(tool, specialistBackend);
+            const job = profile ? await getLatestJob(profile, specialistBackend) : null;
+            if (job) {
+              // Registra qual rendered_api tem esse job, pra o proxy
+              // `/api/specialist-jobs/:id/rendered` rotear certo (o front polla
+              // só com o job_id, sem saber o backend).
+              rememberJobBackend(job.jobId, specialistBackend.renderedUrl);
+              // Ancora o job na thread (server-side) pra o card SOBREVIVER ao
+              // reload: o thread-history re-injeta o marcador no histórico. O
+              // marcador injetado aqui no stream NÃO entra no state.db do gateway.
+              // Chave = `sessionId` COMPLETO (waves-<tenant>-user-<id>::<thread>),
+              // idêntico ao `threadId` que o thread-history recebe na leitura.
+              recordJobAnchor(sessionId, job.jobId);
+              enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: "chatcmpl-specialist",
+                    object: "chat.completion.chunk",
+                    choices: [
+                      { index: 0, delta: { content: `\ncheck_job: "${job.jobId}"` }, finish_reason: null },
+                    ],
+                  })}\n\n`,
+                ),
+              );
+              console.log(
+                `[chat:specialist] ${tool} → job ${job.jobId} @ ${specialistBackend.renderedUrl} (check_job injetado)`,
+              );
+              break; // 1 card por request (parseCheckJob pega o 1º marcador)
+            }
+          }
+
+          enqueue(encoder.encode("data: [DONE]\n\n"));
+          close();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[hermes] route error:", msg);
+          enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`),
+          );
+          enqueue(encoder.encode("data: [DONE]\n\n"));
+          close();
+        }
+      })();
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
