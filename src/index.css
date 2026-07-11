@@ -1040,23 +1040,39 @@ a {
   cursor: default;
 }
 
-/* Expanded message — fills the main content area, respects sidebar */
+/* Expanded message — overlay de leitura em TELA CHEIA. `fixed` (não `absolute`)
+   pra cobrir o viewport inteiro; fundo OPACO + z-index alto pra nada vazar por
+   trás (os balões vizinhos ficavam visíveis quando era `absolute` no __content).
+   O padding horizontal com clamp centraliza o texto numa coluna legível em telas
+   largas sem precisar de wrapper interno. */
 .msg-expanded {
-  position: absolute !important;
+  position: fixed !important;
   inset: 0 !important;
-  z-index: 50 !important;
+  z-index: 1000 !important;
   background: var(--background) !important;
   overflow: auto !important;
-  padding: 32px 48px !important;
+  padding: 56px clamp(24px, 8vw, 200px) 120px !important;
+  margin: 0 !important;
   max-width: 100% !important;
   width: 100% !important;
 }
 
-.msg-expanded .msg-actions-bar {
-  position: sticky;
-  top: 8px;
-  float: right;
-  z-index: 51;
+/* O composer (messageBox) precisa continuar acessível por cima do overlay em
+   tela cheia — sobe acima do z-index 1000 e ganha fundo opaco pra que o usuário
+   possa digitar e enviar (o que colapsa a mensagem expandida). */
+.openui-shell-thread-composer {
+  position: relative;
+  z-index: 1001;
+  background: var(--background);
+}
+
+/* No modo expandido a barra de ações (copiar/baixar) flutua FIXA no canto
+   superior direito, por cima do conteúdo, visível mesmo ao rolar. */
+.msg-expanded .msg-actions-top {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1001;
 }
 
 .msg-expand-close {
@@ -2272,6 +2288,10 @@ a {
  * do assistant" pra parecer parte da conversa, não um indicador técnico.
  * ============================================================================ */
 .thinking-bubble {
+  /* A lib renderiza o loader num <div> SEM classe (sem o recuo --without-logo
+     das mensagens), então o balão ficava colado à esquerda. Este margin casa o
+     recuo do avatar (32px + space-s) das mensagens do assistente. */
+  margin-left: calc(32px + var(--openui-space-s, 8px));
   display: inline-flex;
   align-items: center;
   gap: 0.7rem;

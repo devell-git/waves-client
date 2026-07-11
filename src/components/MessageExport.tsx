@@ -3,7 +3,7 @@
  * Aparece no canto superior direito de cada mensagem do assistente.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Copy, Check, Maximize2, X } from "lucide-react";
+import { Download, Copy, Check, Maximize2 } from "lucide-react";
 import { normalizeForExport } from "../lib/export-normalizers";
 import { loadSession } from "../lib/session";
 
@@ -199,33 +199,54 @@ ${clone.innerHTML}
     });
   }, []);
 
+  // Desfaz a expansão: remove a classe/overlay e o botão de fechar, e sincroniza
+  // o estado React (ícone/label). Fonte única usada pelo toggle, pelo Esc, pelo
+  // botão de fechar e pelo evento de "enviar mensagem".
+  const collapse = useCallback(() => {
+    const bar = barRef.current;
+    const contentEl = bar ? findContentEl(bar) : null;
+    if (contentEl) {
+      contentEl.classList.remove("msg-expanded");
+      contentEl.querySelector(".msg-expand-close")?.remove();
+    }
+    setExpanded(false);
+  }, []);
+
   const handleExpand = useCallback(() => {
     const bar = barRef.current;
     if (!bar) return;
     const contentEl = findContentEl(bar);
     if (!contentEl) return;
 
-    const isExpanded = contentEl.classList.contains("msg-expanded");
-    if (isExpanded) {
-      contentEl.classList.remove("msg-expanded");
-      contentEl.querySelector(".msg-expand-close")?.remove();
-      setExpanded(false);
-    } else {
-      contentEl.classList.add("msg-expanded");
-      const closeBtn = document.createElement("button");
-      closeBtn.className = "msg-expand-close";
-      closeBtn.title = "Fechar";
-      closeBtn.setAttribute("aria-label", "Fechar");
-      closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-      closeBtn.onclick = () => {
-        contentEl.classList.remove("msg-expanded");
-        closeBtn.remove();
-        setExpanded(false);
-      };
-      contentEl.prepend(closeBtn);
-      setExpanded(true);
+    if (contentEl.classList.contains("msg-expanded")) {
+      collapse();
+      return;
     }
-  }, []);
+    contentEl.classList.add("msg-expanded");
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "msg-expand-close";
+    closeBtn.title = "Fechar";
+    closeBtn.setAttribute("aria-label", "Fechar");
+    closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+    closeBtn.onclick = () => collapse();
+    contentEl.prepend(closeBtn);
+    setExpanded(true);
+  }, [collapse]);
+
+  // Enquanto expandido: Esc fecha, e enviar uma mensagem (evento global do
+  // composer) desfaz a expansão pra não esconder a resposta nova atrás do overlay.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") collapse();
+    };
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("waves:collapse-expanded", collapse);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("waves:collapse-expanded", collapse);
+    };
+  }, [expanded, collapse]);
 
   return (
     <span className="msg-actions-bar" ref={barRef}>
@@ -238,17 +259,6 @@ ${clone.innerHTML}
         aria-label="Copiar texto"
       >
         {copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={2} />}
-      </button>
-
-      {/* Expand */}
-      <button
-        type="button"
-        className="msg-action-btn"
-        onClick={handleExpand}
-        title={expanded ? "Recolher" : "Expandir"}
-        aria-label={expanded ? "Recolher" : "Expandir"}
-      >
-        {expanded ? <X size={14} strokeWidth={2} /> : <Maximize2 size={14} strokeWidth={2} />}
       </button>
 
       {/* Download */}
@@ -266,6 +276,20 @@ ${clone.innerHTML}
           <Download size={14} strokeWidth={2} />
         )}
       </button>
+
+      {/* Expand — escondido quando já expandido (fechar é pelo botão grande à
+          esquerda / Esc / envio de mensagem), pra não duplicar o "X". */}
+      {!expanded && (
+        <button
+          type="button"
+          className="msg-action-btn"
+          onClick={handleExpand}
+          title="Expandir"
+          aria-label="Expandir"
+        >
+          <Maximize2 size={14} strokeWidth={2} />
+        </button>
+      )}
 
       {open && (
         <div ref={menuRef} className="msg-export-menu">

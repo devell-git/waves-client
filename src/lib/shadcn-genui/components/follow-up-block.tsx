@@ -38,7 +38,13 @@ export const FollowUpBlock = defineComponent({
               variant="outline"
               size="sm"
               className="h-auto py-1.5 px-3 text-xs"
-              onClick={() => triggerAction(text)}
+              onClick={() => {
+                // Follow-up envia via triggerAction (não passa pelo composer),
+                // então dispara aqui o colapso da mensagem expandida — assim o
+                // usuário volta ao tamanho original e vê a plataforma respondendo.
+                window.dispatchEvent(new CustomEvent("waves:collapse-expanded"));
+                triggerAction(text);
+              }}
             >
               {text}
             </ShadcnButton>

@@ -20,13 +20,16 @@ para a API Waves e para o **Hermes** (engine de agentes).
 Browser (https://app.<tenant>.com)
    │  mesma origem
    ▼
-Express :3002  ──/ , /login, /chat  → serve a SPA (dist/)
+Express :3002  ──/ , /login, /chat, /admin/*  → serve a SPA (dist/)
    ├─ /api/tenant          → branding do tenant (resolvido pelo Host)
    ├─ /api/waves/<path>    → PROXY p/ a Waves do tenant (injeta X-API-KEY do tenant)
    ├─ /api/chat            → stream do chat → GATEWAY Hermes do agente (host:port do login)
    ├─ /api/threads*        → histórico/busca → gateway /api/sessions* e /api/sessions-search
+   ├─ /api/notifications*  → sino (SQLite local) + ingest server-to-server (Hermes)
    ├─ /api/share-recipients→ gateway /api/web-users
-   └─ /api/specialist-jobs*→ rendered_api (:18861) dos sub-agentes
+   ├─ /api/uploads|files   → anexos do chat (URLs assinadas)
+   ├─ /api/specialist-jobs*→ rendered_api dos sub-agentes
+   └─ /api/architecture/*  → graph-api (:18820), admin-only
 ```
 
 - **Quem é o tenant?** Decidido pelo **Host** da request (`resolveTenantByHost`).
@@ -133,17 +136,24 @@ Browser em app.<tenant>.com
 
 | Var | Para quê |
 |-----|----------|
-| `PORT` | porta do Express (default `3002`). |
+| `PORT` | porta do Express (default `3001` no código; use `3002` em produção). |
 | `VITE_WAVES_URL` | **build-time**. Em produção = `/api/waves` (proxy de mesma origem → multi-tenant por host). |
 | `VITE_WAVES_TOKEN` | build-time; **superado** pelo `api_key` do tenant no proxy. Mantenha um valor qualquer não-vazio. |
 | `TENANTS_FILE` | caminho do `tenants.json` (default `.secrets/tenants.json`). |
 | `DEFAULT_TENANT` | slug usado quando o Host não casa nenhum tenant (só p/ single-tenant). |
-| `HERMES_ALLOWED_HOSTS` | CSV de hosts de gateway Hermes permitidos **além do loopback**. Vazio = só `127.0.0.1` (deploy co-locado). Defina quando o Hermes for **remoto**. |
+| `TRUST_FORWARDED_HOST` | confiar em `X-Forwarded-Host` atrás de proxy (default `true`). |
+| `HERMES_ALLOWED_HOSTS` | CSV de hosts de gateway Hermes permitidos **além do loopback**. Vazio = só `127.0.0.1` (deploy co-locado). |
+| `HERMES_ALLOWED_PORTS` / `HERMES_PORT_MIN` / `HERMES_PORT_MAX` | anti-SSRF do proxy de chat (default faixa `18000–18999`). |
+| `HERMES_STREAM_TIMEOUT_MS` | timeout do stream SSE por turno (default `3600000`). |
 | `OPENAI_PROVIDER` / `HERMES_BASE_URL` / `HERMES_MODEL` / `HERMES_KEY_PATH` | upstream de chat **default/fallback** (o gateway real vem do agente do login). `hermes` = roteia pros gateways Hermes. |
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` / `CODEX_AUTH_PATH` | provider alternativo (OpenAI/Codex) quando não-Hermes. |
-| `RENDERED_API_URL` | base do serviço de specialist-jobs (default `http://127.0.0.1:18861`). |
-| `SPECIALIST_PROFILE_PREFIX` | prefixo `consult_*` → profile do sub-agente (default `bioshield-`). |
+| `WAVES_PROXY_TIMEOUT_MS` | timeout do proxy `/api/waves/*` (default `30000`). |
+| `RENDERED_API_URL` / `SUPPORT_RENDERED_URL` | bases do rendered_api (default `:18861` / `:18882`). |
+| `SPECIALIST_BACKENDS` / `SPECIALIST_PROFILE_PREFIX` | roteamento de specialist-jobs por porta de gateway. |
+| `GRAPH_API_URL` | base do hermes-graph-api (default `http://127.0.0.1:18820`). |
+| `WHISPER_URL` | serviço de transcrição (default `http://127.0.0.1:18900`). |
 | `UPLOADS_SIGNING_SECRET` | assina URLs de arquivos do chat. |
+| `NOTIFY_INGEST_KEY` | chave server-to-server para `POST /api/notifications/ingest`. |
 | `NOTIFICATIONS_DB` | caminho do SQLite do "sino" (default `data/notifications.db`, **do próprio client**). |
 
 > Nada de `*.db`/`.secrets`/`.env` no git.
@@ -226,18 +236,30 @@ roteia pro gateway `host:port` do agente.
 ## Estrutura
 
 ```
-server/            Express (TS, roda via tsx)
-  index.ts         rotas (tenant, proxy /api/waves, threads, skills?, uploads, share, specialist)
-  chat.ts          pipeline do chat → gateway Hermes (stream SSE)
-  tenants.ts       resolução de tenant por Host (ALS) + branding
-  thread-history.ts histórico via HTTP do gateway (/api/sessions*)
-  specialist-jobs.ts latest job via rendered_api (HTTP)
+server/                 Express (TS, roda via tsx)
+  index.ts              rotas HTTP (tenant, proxy, threads, uploads, admin, …)
+  chat.ts               re-export fino → chat/index.ts
+  chat/                 pipeline do chat (orquestrador + handlers Hermes/Codex/OpenAI)
+  runtime-config.ts     starters fallback por porta (único ponto de hardcode de profile)
+  upstream-registry.ts  registro de upstreams HTTP (Waves; extensível)
+  tenants.ts            resolução de tenant por Host (ALS) + branding
+  thread-history.ts     histórico via HTTP do gateway (/api/sessions*)
+  specialist-jobs.ts    rendered_api dos sub-agentes
   ...
-src/               React (Vite) → dist/
-  api/             clientes HTTP (waves-api, threads, tasks, …)
-  components/      ChatPage, LoginPage, ProfileSelect, FilePreviewer, …
-docs/              REQUEST_LIFECYCLE.md, OTIMIZACOES-TOKEN.md
-.secrets/          tenants.json (FORA do git)
+src/                    React (Vite) → dist/
+  api/                  clientes HTTP (waves-api, threads, tasks, …)
+  components/
+    ChatPage.tsx        shell fino da página de chat
+    chat/               subcomponentes + useChatPageState (split do monolito)
+    architecture/       Architecture Explorer (admin)
+    tokens/             Token Dashboard (admin)
+    soc/                SOC Dashboard (admin)
+  modules/              módulos de feature com API pública (ver docs/MODULES.md)
+    input-form/         formulário de abertura de conversa (referência)
+    app-routes.tsx      registro de rotas admin gated por permissão
+docs/                   REQUEST_LIFECYCLE.md, MODULES.md, SPLIT-PLAN.md, …
+.secrets/               tenants.json (FORA do git)
 ```
 
-Detalhe do ciclo de request: `docs/REQUEST_LIFECYCLE.md`.
+- Detalhe do ciclo de request: `docs/REQUEST_LIFECYCLE.md`.
+- Como criar módulos novos (frontend e backend): `docs/MODULES.md`.

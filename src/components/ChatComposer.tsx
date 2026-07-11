@@ -208,6 +208,11 @@ export function ChatComposer({
     const trimmed = (overrideText ?? text).trim();
     if (!trimmed && files.length === 0) return;
 
+    // Ao enviar, desfaz qualquer mensagem expandida (overlay em tela cheia) —
+    // senão a resposta nova chegaria atrás do overlay e o usuário perderia o
+    // fluxo da conversa. MessageExport escuta este evento.
+    window.dispatchEvent(new CustomEvent("waves:collapse-expanded"));
+
     // Atalho DETERMINÍSTICO: "criar/nova tarefa" com um kanban na tela abre o
     // modal nativo direto — sem passar pelo agente (que às vezes sugere/pergunta
     // em vez de abrir). Só intercepta se houver workflow de kanban em contexto.
